@@ -21,12 +21,6 @@
   }\
 }
 
-static void
-mndb_ida_table_init(mndb_ida_table_t *table, size_t size, mndb_mem_t *mem);
-
-static void
-mndb_ida_table_destroy(mndb_ida_table_t *table);
-
 void
 mndb_mem_init(mndb_mem_t *mem, size_t size, mndb_mem_flags_t flags)
 {
@@ -40,20 +34,12 @@ mndb_mem_init(mndb_mem_t *mem, size_t size, mndb_mem_flags_t flags)
   mem->data2 = NULL;
   mem->size = mem->data != NULL ? size : 0;
   mem->flags = flags;
-
-  // uninitialized
-  mem->ida_table = NULL;
 }
 
 
 void
 mndb_mem_destroy(mndb_mem_t *mem)
 {
-  if(mem->ida_table != NULL)
-  {
-    mndb_ida_table_destroy(mem->ida_table);
-  }
-
   if(mem->data != NULL)
   {
     free(mem->data);
@@ -66,7 +52,6 @@ mndb_mem_resize(mndb_mem_t *mem, size_t size)
   uint8_t *new_data = realloc(mem->data, size);
   if(likely(new_data != NULL))
   {
-    mndb_ida_table_move(mem->ida_table, new_data - mem->data);
     mem->size = size;
     mem->data = new_data;
     return true;
@@ -76,22 +61,6 @@ mndb_mem_resize(mndb_mem_t *mem, size_t size)
     fprintf(stderr, "WARN: resizing mem failed\n");
     return false;
   }
-}
-
-void
-mndb_ida_table_remove(mndb_ida_table_t *table, uint8_t *val)
-{
-  assert(val > table->data && val < table->data + table->size);
-  if(table->free > 0)
-  {
-    *(uintptr_t *)val = table->free | 1;
-  }
-  else
-  {
-    *(uintptr_t *)val = 0 | 1;
-  }
-  table->free = (uintptr_t)(val - table->data);
-  assert(table->free < table->size);
 }
 
 mndb_mem_header_t *
@@ -116,36 +85,6 @@ void
 mndb_free(uint8_t *ptr)
 {
   mndb_mem_header_free(mndb_mem_header(ptr));
-}
-
-void
-mndb_unref_ida(uint8_t *ptr)
-{
-  mndb_mem_header_t *header = mndb_mem_header(mndb_translate_ida(ptr));
-  mndb_ida_table_t *table = mndb_get_ida_table(ptr);
-  mndb_mem_header_unref(header);
-  if(unlikely(header->refc == 0))
-  {
-    mndb_ida_table_remove(table, ptr);
-  }
-}
-
-void
-mndb_ref_ida(uint8_t *ptr)
-{
-  mndb_mem_header_ref(mndb_mem_header(mndb_translate_ida(ptr)));
-}
-
-void
-mndb_free_ida(uint8_t *ptr)
-{
-  fprintf(stderr, "free ida: %p\n", ptr);
-  mndb_mem_header_t *header = mndb_mem_header(mndb_translate_ida(ptr));
-  mndb_ida_table_t *table = mndb_get_ida_table(ptr);
-  mndb_mem_header_free(header);
-  mndb_ida_table_remove(table, ptr);
-
-  fprintf(stderr, "/free ida: %p\n", ptr);
 }
 
 uint8_t *
@@ -202,22 +141,6 @@ mndb_mem_header_data(mndb_mem_header_t *header)
   return (uint8_t *)header + sizeof(mndb_mem_header_t);
 }
 
-void
-mndb_mem_mark_ida(mndb_mem_t *mem)
-{
-  uint8_t **i = (uint8_t **) mem->ida_table->data;
-  while((uint8_t *)i < (mem->ida_table->data + mem->ida_table->size))
-  {
-    if(likely(*i != NULL))
-    {
-      mndb_mem_header_t *header = (mndb_mem_header_t *)*i;
-      assert(header->mark_or_copy_func.copy_func != NULL);
-      mndb_mem_mark(mndb_mem_header_data(header));
-    }
-    i++;
-  }
-}
-
 static void
 mndb_mem_mark_from_roots(mndb_mem_t *mem, uint8_t *roots[], size_t len)
 {
@@ -230,7 +153,6 @@ mndb_mem_mark_from_roots(mndb_mem_t *mem, uint8_t *roots[], size_t len)
     mndb_mem_mark(mndb_mem_header_data(header));
   }
 }
-
 
 void
 mndb_mem_copy_from_roots(mndb_mem_t *mem, uint8_t *roots[], size_t len)
@@ -380,11 +302,6 @@ mndb_mem_compact_step_fwd(mndb_mem_t *mem)
       (*header->fwd_func)(mndb_mem_header_data(header));
     }
   MNDB_EACH_HEADER_END(mem)
-
-  if(mem->ida_table != NULL)
-  {
-    mndb_ida_table_forward(mem->ida_table);
-  }
 }
 
 void
