@@ -14,6 +14,8 @@ typedef enum {
 } mndb_log_level_t;
 
 
+#define MNDB_ARY_LEN(ary) (sizeof(ary) / sizeof(ary[0]))
+
 void
 mndb_log(mndb_log_level_t level, const char *tag, const char *format, ...) __attribute__ ((format(printf, 3, 4)));
 
