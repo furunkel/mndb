@@ -1,0 +1,2 @@
+--std=c11
+--enable=warning,style,performance,portability,information,missingInclude
