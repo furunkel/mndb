@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "mndb-util.h"
+#include "common/mndb-util.h"
 
 static const char *const log_levels[MNDB_N_LOG_LEVELS] = {
   "DEBUG",
@@ -32,15 +32,18 @@ mndb_log(mndb_log_level_t level, const char *tag, const char *format, ...)
                    + sep_len
                    + level_len
                    + sep_len
-                   + format_len];
+                   + format_len
+                   + 2];
 
   size_t i = 0;
-  strcpy(full_format + i, prefix); i += prefix_len;
-  strcpy(full_format + i, tag); i += tag_len;
-  strcpy(full_format + i, sep); i += sep_len;
-  strcpy(full_format + i, log_levels[level]); i += level_len;
-  strcpy(full_format + i, sep); i += sep_len;
-  strcpy(full_format + i, format);
+  memcpy(full_format + i, prefix, prefix_len); i += prefix_len;
+  memcpy(full_format + i, tag, tag_len); i += tag_len;
+  memcpy(full_format + i, sep, sep_len); i += sep_len;
+  memcpy(full_format + i, log_levels[level], level_len); i += level_len;
+  memcpy(full_format + i, sep, sep_len); i += sep_len;
+  memcpy(full_format + i, format, format_len); i += format_len;
+  full_format[i] = '\n'; i++;
+  full_format[i] = '\0'; i++;
 
   va_start(args, format);
   vfprintf(stderr, full_format, args);
