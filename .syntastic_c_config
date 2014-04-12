@@ -17,4 +17,3 @@
 -Wcast-align
 -fstrict-aliasing
 -Wstrict-aliasing=3
-

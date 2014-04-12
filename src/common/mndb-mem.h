@@ -45,7 +45,7 @@ typedef struct {
 } mndb_mem_header_t;
 
 typedef void (*mndb_mem_each_header_func_t)(mndb_mem_header_t *header,
-                                            mndb_mem_t *mem, uint8_t *addr);
+                                            void *user_data);
 
 mndb_mem_header_t *
 mndb_mem_header(uint8_t *ptr);
@@ -84,7 +84,7 @@ uint8_t *
 mndb_mem_header_data(mndb_mem_header_t *header);
 
 void
-mndb_mem_each_header(mndb_mem_t *mem, mndb_mem_each_header_func_t cb);
+mndb_mem_each_header(mndb_mem_t *mem, mndb_mem_each_header_func_t cb, void *user_data);
 
 uint8_t *
 mndb_mem_copy(mndb_mem_t *mem, uint8_t *ptr);

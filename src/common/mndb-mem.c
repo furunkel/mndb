@@ -21,6 +21,8 @@
   }\
 }
 
+static const char *const _mndb_log_tag = "mem";
+
 void
 mndb_mem_init(mndb_mem_t *mem, size_t size, mndb_mem_flags_t flags)
 {
@@ -58,7 +60,7 @@ mndb_mem_resize(mndb_mem_t *mem, size_t size)
   }
   else
   {
-    fprintf(stderr, "WARN: resizing mem failed\n");
+    mndb_warn("resizing mem failed\n");
     return false;
   }
 }
@@ -98,12 +100,15 @@ mndb_mem_alloc(mndb_mem_t *mem, size_t size,
 
   if(unlikely(new_cur >= mem->size))
   {
-    mndb_mem_resize(mem, (size_t)(new_cur + (mem->size / 2)));
+    if(unlikely(!mndb_mem_resize(mem, (size_t)(new_cur + (mem->size / 2)))))
+    {
+      return NULL;
+    }
   }
 
   mndb_mem_header_t *header = (mndb_mem_header_t *)(mem->data + mem->cur);
 
-  fprintf(stderr, "alloc header: %p\n", header);
+  mndb_debug("alloc header: %p\n", header);
   header->size      = size + sizeof(mndb_mem_header_t);
   header->refc      = (mem->flags & MNDB_MEM_FLAGS_MARK) ? 0 : 1;
   header->fwd_func  = fwd_func;
@@ -131,7 +136,7 @@ mndb_mem_header_ref(mndb_mem_header_t *header)
 void
 mndb_mem_header_free(mndb_mem_header_t *header)
 {
-  fprintf(stderr, "free header: %p\n", header);
+  mndb_debug("free header: %p\n", header);
   header->refc = 0;
 }
 
@@ -154,21 +159,23 @@ mndb_mem_mark_from_roots(mndb_mem_t *mem, uint8_t *roots[], size_t len)
   }
 }
 
-void
+bool
 mndb_mem_copy_from_roots(mndb_mem_t *mem, uint8_t *roots[], size_t len)
 {
   if(len == 0 || roots == NULL)
   {
-    fprintf(stderr, "ERROR: no roots given");
-    abort();
-  }
-
-  if(mem->data2 != NULL)
-  {
-    free(mem->data2);
+    mndb_error("no roots given");
+    return false;
   }
 
   mem->cur2 = 0;
+  mem->data2 = malloc(mem->size);
+  if(unlikely(mem->data2 == NULL))
+  {
+    mndb_error("allocating to space failed\n");
+    mem->size = 0;
+    return false;
+  }
 
   for(size_t i = 0; i < len; i++)
   {
@@ -183,6 +190,7 @@ mndb_mem_copy_from_roots(mndb_mem_t *mem, uint8_t *roots[], size_t len)
   {
     uint8_t *data = mem->data;
     mem->data = mem->data2;
+    mem->data2 = NULL;
     free(data);
 
     MNDB_EACH_HEADER_BEGIN(mem)
@@ -192,8 +200,10 @@ mndb_mem_copy_from_roots(mndb_mem_t *mem, uint8_t *roots[], size_t len)
   }
   else
   {
-    fprintf(stderr, "WARN: empty copy gc run\n");
+    mndb_warn("empty copy gc run\n");
   }
+
+  return true;
 }
 
 void
@@ -213,17 +223,6 @@ mndb_mem_mark(uint8_t *ptr)
 uint8_t *
 mndb_mem_copy(mndb_mem_t *mem, uint8_t *ptr)
 {
-  if(unlikely(mem->data2 == NULL))
-  {
-    mem->data2 = malloc(mem->size);
-    mem->cur2 = 0;
-    if(unlikely(mem->data2 == NULL))
-    {
-      fprintf(stderr, "WARN: allocating to space failed\n");
-      mem->size = 0;
-      return ptr;
-    }
-  }
   mndb_mem_header_t *header = mndb_mem_header(ptr);
 
   if(likely(header->fwd_ptr == NULL))
@@ -250,15 +249,11 @@ mndb_mem_forward_reference(uint8_t **ref_ptr)
 
 
 void
-mndb_mem_each_header(mndb_mem_t *mem, mndb_mem_each_header_func_t cb)
+mndb_mem_each_header(mndb_mem_t *mem, mndb_mem_each_header_func_t cb, void *user_data)
 {
-  for(uint8_t *ptr = mem->data;
-      ptr < mem->data + mem->cur;
-      ptr = ptr + ((mndb_mem_header_t *)ptr)->size)
-  {
-    mndb_mem_header_t *header = (mndb_mem_header_t *) ptr;
-    (*cb)(header, mem, mndb_mem_header_data(header));
-  }
+  MNDB_EACH_HEADER_BEGIN(mem)
+    (*cb)(header, user_data);
+  MNDB_EACH_HEADER_END(mem)
 }
 
 static void
@@ -345,21 +340,23 @@ mndb_mem_compact(mndb_mem_t *mem, uint8_t *roots[], size_t len)
    }
 }
 
-void
+bool
 mndb_mem_gc(mndb_mem_t *mem, uint8_t *roots[], size_t len)
 {
   if(mem->flags & MNDB_MEM_FLAGS_MARK)
   {
     mndb_mem_mark_from_roots(mem, roots, len);
     mndb_mem_compact(mem, roots, len);
+    return true;
   }
   else if(mem->flags & MNDB_MEM_FLAGS_COPY)
   {
-    mndb_mem_copy_from_roots(mem, roots, len);
+    return mndb_mem_copy_from_roots(mem, roots, len);
   }
   else
   {
     mndb_mem_compact(mem, roots, len);
+    return true;
   }
 }
 
