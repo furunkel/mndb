@@ -1,5 +1,5 @@
 
-static const char *const text = "\
+static const char text[] = "\
 The Project Gutenberg EBook of On the Duty of Civil Disobedience\
 by Henry David Thoreau\
 \

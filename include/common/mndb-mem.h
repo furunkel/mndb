@@ -4,6 +4,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+//NOTE: we cannot guarantee alignment
+// higher than what malloc gives
+#define MNDB_MEM_ALIGN ((size_t)8)
 
 typedef enum {
   MNDB_MEM_FLAGS_NONE   = 0,
@@ -21,6 +24,11 @@ struct mndb_mem_s {
   uint8_t *data;
   uint8_t *data2;
 };
+
+
+#define mndb_mem_get_flags(mem) (mem->flags)
+#define mndb_mem_get_size(mem) (mem->size)
+#define mndb_mem_used(mem) (mem->cur)
 
 typedef struct mndb_mem_s mndb_mem_t;
 
@@ -91,3 +99,6 @@ mndb_mem_copy(mndb_mem_t *mem, uint8_t *ptr);
 
 void
 mndb_mem_mark(uint8_t *ptr);
+
+bool
+mndb_mem_gc(mndb_mem_t *mem, uint8_t *roots[], size_t len);

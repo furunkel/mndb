@@ -111,8 +111,8 @@ mndb_mem_alloc(mndb_mem_t *mem, size_t size,
 
   mndb_mem_header_t *header = (mndb_mem_header_t *)(mem->data + mem->cur);
 
-  mndb_debug("alloc header: %p", header);
-  header->size      = size + sizeof(mndb_mem_header_t);
+  mndb_debug("alloc header %p of size %zd", header, size);
+  header->size      = (size + sizeof(mndb_mem_header_t) + MNDB_MEM_ALIGN - 1) &~ (MNDB_MEM_ALIGN - 1);
   header->refc      = (mem->flags & MNDB_MEM_FLAGS_MARK) ? 0 : 1;
   header->fwd_func  = fwd_func;
   header->mark_or_copy_func = mark_or_copy_func;
