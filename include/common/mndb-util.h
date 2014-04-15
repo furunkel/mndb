@@ -13,7 +13,7 @@ typedef enum {
   MNDB_N_LOG_LEVELS
 } mndb_log_level_t;
 
-
+#define MNDB_ALIGN(s, align) (((s) + align - 1) &~ (align - 1))
 #define MNDB_ARY_LEN(ary) (sizeof(ary) / sizeof(ary[0]))
 
 void

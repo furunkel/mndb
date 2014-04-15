@@ -11,7 +11,7 @@ end
 namespace :test do
   test_src_files.each do |src_file|
       file test_bin_file(src_file) => [src_file, 'build:shared_lib'] do |t|
-      sh "cc #{t.prerequisites[0]} #{shared_lib_file} #{default_cc_options.join ' '} -o #{t.name}"
+      sh "cc #{t.prerequisites[0]} #{shared_lib_file} #{default_cc_options.join ' '} -ggdb -o #{t.name}"
     end
   end
 

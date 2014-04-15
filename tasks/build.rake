@@ -1,11 +1,9 @@
 require_relative 'util'
 require 'tmpdir'
 
-$build_dir = Dir.mktmpdir 'mndb_build'
+$build_dir = File.join Dir.tmpdir, '_mndb_build'
 
 at_exit {
-  $stderr.puts 'Cleaning up temporary build directories...'
-  FileUtils.remove_entry_secure $build_dir
 }
 
 def src_files
@@ -28,7 +26,7 @@ namespace :build do
   src_files.each do |src_file|
     file obj_file(src_file) => src_file do |t|
       mkdir_p t.name.pathmap('%d')
-      sh "cc -c #{t.prerequisites[0]} -fpic #{default_cc_options.join ' '} -o #{t.name}"
+      sh "cc -c #{t.prerequisites[0]} -fpic #{default_cc_options.join ' '} -ggdb -o #{t.name}"
     end
   end
 
