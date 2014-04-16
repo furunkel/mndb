@@ -1,4 +1,5 @@
 #include "common/mndb-mem.h"
+#include "common/mndb-ptr-stack.h"
 
 #include "../test-helper.h"
 #include <alloca.h>
@@ -14,7 +15,6 @@ static const char *const _mndb_log_tag = "mem-test";
 
 static const mndb_mem_flags_t g_flags[] = {
   MNDB_MEM_FLAGS_NONE,
-  MNDB_MEM_FLAGS_SHRINK,
 };
 
 typedef struct {
@@ -30,13 +30,14 @@ typedef struct {
   char data[];
 } flat_obj_t;
 
-typedef bool (*obj_valid_func_t)(uint8_t *);
+typedef struct tree_obj_s {
+  struct tree_obj_s *left;
+  struct tree_obj_s *right;
+  int id;
+} tree_obj_t;
 
-enum {
-  KEEP_ALL,
-  KEEP_SOME,
-  KEEP_NONE
-};
+
+typedef bool (*obj_valid_func_t)(uint8_t *);
 
 
 static flat_obj_t *
@@ -67,6 +68,66 @@ is_flat_obj_valid(uint8_t *ptr)
          && obj->f2 == 0xabcdef + (uint32_t)obj->id
          && obj->f3 == 0x0a1b3c4d5e6f - (uint64_t)obj->id
          && !strncmp(obj->data, text, obj->size);
+}
+
+static void
+copy_tree(mndb_mem_t *mem, uint8_t *data)
+{
+  tree_obj_t *tree = (tree_obj_t *) data;
+  mndb_debug("copy %p", tree->left);
+  mndb_debug("copy %p", tree->right);
+  tree->left = (tree_obj_t *)mndb_mem_copy(mem, (uint8_t *)tree->left);
+  tree->right = (tree_obj_t *)mndb_mem_copy(mem, (uint8_t *)tree->right);
+}
+
+static tree_obj_t *
+alloc_random_tree_(tree_obj_t **root, mndb_mem_t *mem, mndb_ptr_stack_t *stack, int size, int id)
+{
+  if(size == 0) return NULL;
+
+  tree_obj_t *tree = (tree_obj_t *) mndb_mem_alloc(mem, sizeof(tree_obj_t),
+                                                   copy_tree,
+                                                   (uint8_t **)root,
+                                                   root == NULL ? 0 : 1);
+
+
+  if(root == NULL) root = &tree;
+
+
+  int new_size = size - 1;
+  int left;
+  int right;
+  if(new_size > 0)
+  {
+    left = (new_size / 2) + ((rand() % (new_size)) - new_size / 2);
+    right = new_size - left;
+  }
+  else
+  {
+    left = 0;
+    right = 0;
+  }
+
+  mndb_ptr_stack_push(stack, (uint8_t *)tree);
+  tree->left = alloc_random_tree_(root, mem, stack, left, id);
+  mndb_ptr_stack_pop(stack);
+
+  tree->right = alloc_random_tree_(root, mem, stack, right, left == 0 ? id : (tree->left->id + 1));
+
+  tree->id = right == 0 ? (left == 0 ? id : tree->left->id + 1) : tree->right->id + 1;
+
+  return tree;
+}
+
+static tree_obj_t *
+alloc_random_tree(mndb_mem_t *mem, int size)
+{
+  mndb_ptr_stack_t *stack = mndb_ptr_stack_new(1024 * 2);
+  tree_obj_t *retval = alloc_random_tree_(NULL, mem, stack, size, 1);
+
+  mndb_ptr_stack_free(stack);
+
+  return retval;
 }
 
 static bool
@@ -102,7 +163,7 @@ find_root(mndb_mem_header_t *header, void *user_data)
 }
 
 static void
-assert_roots(mndb_mem_t *mem, uint8_t *roots[], size_t len)
+assert_all_headers_are_roots(mndb_mem_t *mem, uint8_t *roots[], size_t len)
 {
   uint8_t *data = alloca(sizeof(roots) + sizeof(len));
   *((uint8_t ***)data) = roots;
@@ -120,74 +181,86 @@ check_header(mndb_mem_header_t *header, void *user_data)
 }
 
 static void
-assert_headers_valid(mndb_mem_t *mem, obj_valid_func_t func)
+assert_all_headers_are_valid(mndb_mem_t *mem, obj_valid_func_t func)
 {
   assert(mndb_mem_each_header(mem, check_header, func));
 }
 
 static void
-test_gc_flat(mndb_mem_t *mem, mndb_mem_flags_t flags, int mode)
+test_mem_flat()
 {
-  size_t total = 0;
-  uint8_t *roots[g_n_objs];
-  for(int i = 0; i < g_n_objs; i++)
+  mndb_mem_t mem;
+  mndb_mem_init(&mem, 1024, MNDB_MEM_FLAGS_NONE);
+
+  for(int j = 0; j < g_n_iterations; j++)
   {
-    size_t size = ((size_t)rand() % (MNDB_ARY_LEN(text) - 32)) + 32;
-    total += size + sizeof(flat_obj_t);
-    if((int)total >= g_max_mem)
+    size_t total = 0;
+    uint8_t *roots[g_n_objs];
+    for(int i = 0; i < g_n_objs; i++)
     {
-      mndb_debug("memory limit reached, forcing GC...");
-      break;
+      size_t size = ((size_t)rand() % (MNDB_ARY_LEN(text) - 32)) + 32;
+      total += size + sizeof(flat_obj_t);
+      if((int)total >= g_max_mem)
+      {
+        mndb_debug("memory limit reached, forcing GC...");
+        break;
+      }
+      roots[i] = (uint8_t *)alloc_flat_obj(&mem, i, size, roots, (size_t)i);
     }
-    roots[i] = (uint8_t *)alloc_flat_obj(mem, i, size, roots, (size_t)i);
+
+    int n_roots;
+
+    switch(j % 3)
+    {
+      case 0:
+        n_roots = 0;
+        break;
+      case 1:
+        n_roots = g_n_objs;
+        break;
+      case 2:
+        n_roots = (rand() % (g_n_objs / 4)) + (rand() % (g_n_objs / 4));
+        break;
+      default:
+        n_roots = 0;
+        assert(0);
+    }
+    assert(mndb_mem_gc(&mem, roots, (size_t)n_roots));
+
+    if(n_roots == 0) assert(mndb_mem_used(&mem) == 0);
+
+    assert_header_count_equals(&mem, n_roots);
+    assert_all_headers_are_valid(&mem, is_flat_obj_valid);
+    assert_all_headers_are_roots(&mem, roots, (size_t)n_roots);
   }
 
-  int n_roots;
+  mndb_mem_destroy(&mem);
+}
 
-  switch(mode)
+
+static void
+test_mem_tree()
+{
+  mndb_mem_t mem;
+  mndb_mem_init(&mem, 1024, MNDB_MEM_FLAGS_NONE);
+
+  for(int j = 0; j < g_n_iterations; j++)
   {
-    case KEEP_NONE:
-      n_roots = 0;
-      break;
-    case KEEP_ALL:
-      n_roots = g_n_objs;
-      break;
-    case KEEP_SOME:
-      n_roots = (rand() % (g_n_objs / 4)) + (rand() % (g_n_objs / 4));
-      break;
-    default:
-      n_roots = 0;
-      assert(0);
+    uint8_t *roots[1];
+    roots[0] =  (uint8_t *)alloc_random_tree(&mem, g_n_objs);
+    assert(mndb_mem_gc(&mem, roots, (size_t)0));
+
+    assert_header_count_equals(&mem, g_n_objs);
   }
-  assert(mndb_mem_gc(mem, roots, (size_t)n_roots));
 
-  if(mode == KEEP_NONE) assert(mndb_mem_used(mem) == 0);
-
-  assert_header_count_equals(mem, n_roots);
-  assert_headers_valid(mem, is_flat_obj_valid);
-
-  if(mode == KEEP_SOME) assert_roots(mem, roots, (size_t)n_roots);
-
-  (void) is_flat_obj_valid;
+  mndb_mem_destroy(&mem);
 }
 
 static void
-test_gc()
+test_mem()
 {
-  for(unsigned int i = 0; i < MNDB_ARY_LEN(g_flags); i++)
-  {
-    mndb_mem_t mem;
-    mndb_mem_init(&mem, 1024, g_flags[i]);
-
-    for(int j = 0; j < g_n_iterations; j++)
-    {
-      test_gc_flat(&mem, g_flags[i], KEEP_ALL);
-      test_gc_flat(&mem, g_flags[i], KEEP_NONE);
-      test_gc_flat(&mem, g_flags[i], KEEP_SOME);
-    }
-
-    mndb_mem_destroy(&mem);
-  }
+  //test_mem_flat();
+  test_mem_tree();
 }
 
 
@@ -199,7 +272,7 @@ main(int argc, const char *argv[])
   if(argc > 2) g_n_objs = atoi(argv[2]);
   if(argc > 3) g_max_mem = atol(argv[3]);
 
-  test_gc();
+  test_mem();
 }
 
 

@@ -8,7 +8,6 @@
 
 typedef enum {
   MNDB_MEM_FLAGS_NONE    = 0,
-  MNDB_MEM_FLAGS_SHRINK  = (1 << 2)
 } mndb_mem_flags_t;
 
 
@@ -22,9 +21,9 @@ struct mndb_mem_s {
 };
 
 
-#define mndb_mem_get_flags(mem) (mem->flags)
-#define mndb_mem_get_size(mem) (mem->size)
-#define mndb_mem_used(mem) (mem->cur)
+#define mndb_mem_get_flags(mem) ((mem)->flags)
+#define mndb_mem_get_size(mem) ((mem)->size)
+#define mndb_mem_used(mem) ((mem)->cur)
 
 typedef struct mndb_mem_s mndb_mem_t;
 

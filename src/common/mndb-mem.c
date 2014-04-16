@@ -65,6 +65,7 @@ mndb_mem_copy_header(mndb_mem_t *mem, mndb_mem_header_t *header)
   if(likely(header->fwd_ptr == NULL))
   {
     header->fwd_ptr = mem->data2 + mem->cur2;
+    mndb_debug("copying header %p (%p) to %p", header, header->data, header->fwd_ptr);
     mem->cur2 += header->size;
     header = (mndb_mem_header_t *) memcpy(header->fwd_ptr, header, header->size);
 
@@ -75,6 +76,7 @@ mndb_mem_copy_header(mndb_mem_t *mem, mndb_mem_header_t *header)
   }
   else
   {
+    mndb_debug("alredy copied header %p (%p)", header, header->data);
     header = (mndb_mem_header_t *) (header->fwd_ptr);
   }
   return header->data;
@@ -83,6 +85,8 @@ mndb_mem_copy_header(mndb_mem_t *mem, mndb_mem_header_t *header)
 uint8_t *
 mndb_mem_copy(mndb_mem_t *mem, uint8_t *ptr)
 {
+  if(unlikely(ptr == NULL)) return NULL;
+
   mndb_mem_header_t *header = mndb_mem_header(ptr);
   return mndb_mem_copy_header(mem, header);
 }
@@ -170,14 +174,7 @@ mndb_mem_gc(mndb_mem_t *mem, uint8_t *roots[], size_t len)
   }
   else
   {
-    if(mem->flags & MNDB_MEM_FLAGS_SHRINK)
-    {
-      size = mem->cur;
-    }
-    else
-    {
-      size = mem->size + mem->cur / 2;
-    }
+    size = mem->size + mem->cur / 2;
   }
   return mndb_mem_copy_from_roots(mem, size, roots, len);
 }

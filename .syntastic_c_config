@@ -14,6 +14,7 @@
 -Wuninitialized
 -Winit-self
 -Wno-unused-parameter
+-Wno-unused-function
 -Wcast-align
 -fstrict-aliasing
 -Wstrict-aliasing=3
