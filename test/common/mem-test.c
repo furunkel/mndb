@@ -3,8 +3,10 @@
 
 #include "../test-helper.h"
 #include <alloca.h>
+#include <stdio.h>
 
 static int g_n_iterations = 5;
+static int g_n_gcs = 8;
 static int g_n_objs = 1024 * 6;
 static long g_max_mem = 1024L * 1024L * 1024L * 2L;
 
@@ -36,8 +38,15 @@ typedef struct tree_obj_s {
   int id;
 } tree_obj_t;
 
+typedef struct cyclic_obj_s {
+  int id;
+  size_t next_len;
+  struct tree_obj_s *next[];
+} cyclic_obj_t;
+
 
 typedef bool (*obj_valid_func_t)(uint8_t *);
+
 
 
 static flat_obj_t *
@@ -70,12 +79,33 @@ is_flat_obj_valid(uint8_t *ptr)
          && !strncmp(obj->data, text, obj->size);
 }
 
+static bool
+is_tree_obj_valid(uint8_t *ptr)
+{
+  tree_obj_t *obj = (tree_obj_t *) ptr;
+  bool valid;
+
+  if(obj->left == NULL && obj->right == NULL)
+  {
+    valid = true;
+  }
+  else if(obj->left != NULL && obj->right == NULL)
+  {
+    valid = obj->id == obj->left->id + 1;
+  }
+  else
+  {
+    valid = obj->id == obj->right->id + 1;
+  }
+
+  assert(valid);
+  return valid;
+}
+
 static void
 copy_tree(mndb_mem_t *mem, uint8_t *data)
 {
   tree_obj_t *tree = (tree_obj_t *) data;
-  mndb_debug("copy %p", tree->left);
-  mndb_debug("copy %p", tree->right);
   tree->left = (tree_obj_t *)mndb_mem_copy(mem, (uint8_t *)tree->left);
   tree->right = (tree_obj_t *)mndb_mem_copy(mem, (uint8_t *)tree->right);
 }
@@ -87,9 +117,11 @@ alloc_random_tree_(tree_obj_t **root, mndb_mem_t *mem, mndb_ptr_stack_t *stack, 
 
   tree_obj_t *tree = (tree_obj_t *) mndb_mem_alloc(mem, sizeof(tree_obj_t),
                                                    copy_tree,
-                                                   (uint8_t **)root,
-                                                   root == NULL ? 0 : 1);
-
+                                                   mndb_ptr_stack_data(stack),
+                                                   mndb_ptr_stack_cur(stack));
+  tree->id = 0;
+  tree->left = NULL;
+  tree->right = NULL;
 
   if(root == NULL) root = &tree;
 
@@ -108,13 +140,26 @@ alloc_random_tree_(tree_obj_t **root, mndb_mem_t *mem, mndb_ptr_stack_t *stack, 
     right = 0;
   }
 
+  mndb_debug("pushing tree %p", tree);
   mndb_ptr_stack_push(stack, (uint8_t *)tree);
-  tree->left = alloc_random_tree_(root, mem, stack, left, id);
-  mndb_ptr_stack_pop(stack);
+  tree_obj_t *left_tree = alloc_random_tree_(root, mem, stack, left, id);
 
-  tree->right = alloc_random_tree_(root, mem, stack, right, left == 0 ? id : (tree->left->id + 1));
+  mndb_debug("pushing left tree %p", left_tree);
+  mndb_ptr_stack_push(stack, (uint8_t *)left_tree);
 
+  tree_obj_t *right_tree = alloc_random_tree_(root, mem, stack, right, left == 0 ? id : (left_tree->id + 1));
+  left_tree = (tree_obj_t *) mndb_ptr_stack_pop(stack);
+  mndb_debug("popped left tree %p", left_tree);
+
+  tree = (tree_obj_t *) mndb_ptr_stack_pop(stack);
+  mndb_debug("popped tree %p", left_tree);
+
+  tree->left = left_tree;
+  tree->right = right_tree;
   tree->id = right == 0 ? (left == 0 ? id : tree->left->id + 1) : tree->right->id + 1;
+
+  mndb_debug("%p->left = %p", tree, tree->left);
+  mndb_debug("%p->right = %p", tree, tree->right);
 
   return tree;
 }
@@ -122,7 +167,7 @@ alloc_random_tree_(tree_obj_t **root, mndb_mem_t *mem, mndb_ptr_stack_t *stack, 
 static tree_obj_t *
 alloc_random_tree(mndb_mem_t *mem, int size)
 {
-  mndb_ptr_stack_t *stack = mndb_ptr_stack_new(1024 * 2);
+  mndb_ptr_stack_t *stack = mndb_ptr_stack_new(1024 * 7);
   tree_obj_t *retval = alloc_random_tree_(NULL, mem, stack, size, 1);
 
   mndb_ptr_stack_free(stack);
@@ -189,10 +234,12 @@ assert_all_headers_are_valid(mndb_mem_t *mem, obj_valid_func_t func)
 static void
 test_mem_flat()
 {
+  printf("## TEST FLAT\n");
+
   mndb_mem_t mem;
   mndb_mem_init(&mem, 1024, MNDB_MEM_FLAGS_NONE);
 
-  for(int j = 0; j < g_n_iterations; j++)
+  for(int j = 0; j < g_n_gcs; j++)
   {
     size_t total = 0;
     uint8_t *roots[g_n_objs];
@@ -241,26 +288,59 @@ test_mem_flat()
 static void
 test_mem_tree()
 {
-  mndb_mem_t mem;
-  mndb_mem_init(&mem, 1024, MNDB_MEM_FLAGS_NONE);
+  printf("## TEST TREE\n");
 
-  for(int j = 0; j < g_n_iterations; j++)
+  mndb_mem_t mem;
+  mndb_mem_init(&mem, 24, MNDB_MEM_FLAGS_NONE);
+
+  for(int j = 0; j < g_n_gcs; j++)
   {
     uint8_t *roots[1];
-    roots[0] =  (uint8_t *)alloc_random_tree(&mem, g_n_objs);
-    assert(mndb_mem_gc(&mem, roots, (size_t)0));
-
+    tree_obj_t *tree = alloc_random_tree(&mem, g_n_objs);
+    roots[0] = (uint8_t *) tree;
+    assert(mndb_mem_gc(&mem, roots, (size_t)1));
+    tree = (tree_obj_t *) roots[0];
     assert_header_count_equals(&mem, g_n_objs);
+    assert(tree->id == g_n_objs);
+    assert_all_headers_are_valid(&mem, is_tree_obj_valid);
   }
 
   mndb_mem_destroy(&mem);
 }
 
 static void
+test_mem_cyclic()
+{
+  printf("## TEST CYCLIC\n");
+
+  mndb_mem_t mem;
+  mndb_mem_init(&mem, 1024, MNDB_MEM_FLAGS_NONE);
+
+  for(int j = 0; j < g_n_gcs; j++)
+  {
+    uint8_t *roots[1];
+    tree_obj_t *tree = alloc_random_tree(&mem, g_n_objs);
+    roots[0] = (uint8_t *) tree;
+    assert(mndb_mem_gc(&mem, roots, (size_t)1));
+    tree = (tree_obj_t *) roots[0];
+    assert_header_count_equals(&mem, g_n_objs);
+    assert(tree->id == g_n_objs);
+    assert_all_headers_are_valid(&mem, is_tree_obj_valid);
+  }
+
+  mndb_mem_destroy(&mem);
+}
+
+
+
+static void
 test_mem()
 {
-  //test_mem_flat();
-  test_mem_tree();
+  for(int i = 0; i < g_n_iterations; i++)
+  {
+    test_mem_flat();
+    test_mem_tree();
+  }
 }
 
 

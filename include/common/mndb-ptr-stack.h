@@ -25,6 +25,23 @@ mndb_ptr_stack_push(mndb_ptr_stack_t *stack, uint8_t *data)
 static inline uint8_t *
 mndb_ptr_stack_pop(mndb_ptr_stack_t *stack)
 {
-  return stack->data[stack->cur--];
+  return stack->data[--stack->cur];
 }
 
+static inline uint8_t **
+mndb_ptr_stack_data(mndb_ptr_stack_t *stack)
+{
+  return stack->data;
+}
+
+static inline size_t
+mndb_ptr_stack_size(mndb_ptr_stack_t *stack)
+{
+  return stack->size;
+}
+
+static inline size_t
+mndb_ptr_stack_cur(mndb_ptr_stack_t *stack)
+{
+  return stack->cur;
+}

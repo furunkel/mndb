@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <stdio.h>
 #include <stdbool.h>
 
 #include "common/mndb-ptr-stack.h"
@@ -28,3 +29,4 @@ mndb_ptr_stack_free(mndb_ptr_stack_t *stack)
 {
   free(stack);
 }
+

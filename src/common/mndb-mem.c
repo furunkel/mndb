@@ -122,8 +122,12 @@ mndb_mem_copy_from_roots(mndb_mem_t *mem, size_t size, uint8_t *roots[], size_t 
   for(size_t i = 0; i < len; i++)
   {
     uint8_t *ptr = roots[i];
+
+    if(unlikely(ptr == NULL)) continue;
+
     mndb_mem_header_t *header = mndb_mem_header(ptr);
 
+    mndb_debug("about to copy root header %p (%p)", header, header->data);
     roots[i] = mndb_mem_copy_header(mem, header);
   }
 
