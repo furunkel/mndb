@@ -1,5 +1,4 @@
-#include "common/mndb-ygen.h"
-#include "common/mndb-ptr-stack.h"
+#include "mndb.h"
 
 #include "../test-helper.h"
 #include <alloca.h>
@@ -11,7 +10,7 @@ static int g_n_objs = 1024 * 6;
 static long g_max_mem = 1024L * 1024L * 1024L * 2L;
 
 
-static const char *const _mndb_log_tag = "mem-test";
+static const char *const _mndb_log_tag = "ygen-test";
 
 #include "../text.h"
 
@@ -41,7 +40,7 @@ typedef struct tree_obj_s {
 typedef struct cyclic_obj_s {
   int id;
   size_t next_len;
-  struct tree_obj_s *next[];
+  struct cyclic_obj_s *next[];
 } cyclic_obj_t;
 
 
@@ -110,6 +109,56 @@ copy_tree(mndb_ygen_t *mem, uint8_t *data)
   tree->right = (tree_obj_t *)mndb_ygen_copy(mem, (uint8_t *)tree->right);
 }
 
+static void
+copy_cyclic_obj(mndb_ygen_t *mem, uint8_t *data)
+{
+  cyclic_obj_t *obj = (cyclic_obj_t *) data;
+  for(size_t i = 0; i < obj->next_len; i++)
+  {
+    obj->next[i] = (cyclic_obj_t *)mndb_ygen_copy(mem, (uint8_t *) obj->next[i]);
+  }
+}
+
+static cyclic_obj_t *
+alloc_random_graph(mndb_ygen_t *mem, int size)
+{
+  mndb_ptr_stack_t *stack = mndb_ptr_stack_new((size_t)size);
+
+  for(int i = 0; i < size; i++)
+  {
+    int degree = rand() % 256;
+    cyclic_obj_t *obj = (cyclic_obj_t *) mndb_ygen_alloc(mem, sizeof(cyclic_obj_t) + (size_t)degree * sizeof(cyclic_obj_t *),
+                                                         copy_cyclic_obj,
+                                                         mndb_ptr_stack_data(stack),
+                                                         mndb_ptr_stack_cur(stack));
+    obj->next_len = (size_t) degree;
+    memset(obj->next, 0, obj->next_len * sizeof(cyclic_obj_t *));
+    mndb_ptr_stack_push(stack, (uint8_t *)obj);
+  }
+
+  for(size_t j = 0; j < mndb_ptr_stack_cur(stack); j++)
+  {
+    cyclic_obj_t *obj = (cyclic_obj_t *) mndb_ptr_stack_at(stack, j);
+    for(size_t k = 0; k < obj->next_len; k++)
+    {
+      if((int)k % (16 + (rand() % 32)))
+      {
+        obj->next[k] = obj;
+      }
+      else
+      {
+        obj->next[k] = (cyclic_obj_t *) mndb_ptr_stack_at(stack, (size_t)(rand() % (int)mndb_ptr_stack_cur(stack)));
+      }
+    }
+  }
+
+  cyclic_obj_t *obj = (cyclic_obj_t *) mndb_ptr_stack_at(stack, 0);
+
+  mndb_ptr_stack_free(stack);
+
+  return obj;
+}
+
 static tree_obj_t *
 alloc_random_tree_(tree_obj_t **root, mndb_ygen_t *mem, mndb_ptr_stack_t *stack, int size, int id)
 {
@@ -167,7 +216,7 @@ alloc_random_tree_(tree_obj_t **root, mndb_ygen_t *mem, mndb_ptr_stack_t *stack,
 static tree_obj_t *
 alloc_random_tree(mndb_ygen_t *mem, int size)
 {
-  mndb_ptr_stack_t *stack = mndb_ptr_stack_new(1024 * 7);
+  mndb_ptr_stack_t *stack = mndb_ptr_stack_new((size_t)size);
   tree_obj_t *retval = alloc_random_tree_(NULL, mem, stack, size, 1);
 
   mndb_ptr_stack_free(stack);
@@ -319,13 +368,10 @@ test_mem_cyclic()
   for(int j = 0; j < g_n_gcs; j++)
   {
     uint8_t *roots[1];
-    tree_obj_t *tree = alloc_random_tree(&mem, g_n_objs);
-    roots[0] = (uint8_t *) tree;
+    cyclic_obj_t *obj = alloc_random_graph(&mem, g_n_objs);
+    roots[0] = (uint8_t *) obj;
     assert(mndb_ygen_gc(&mem, roots, (size_t)1));
-    tree = (tree_obj_t *) roots[0];
-    assert_header_count_equals(&mem, g_n_objs);
-    assert(tree->id == g_n_objs);
-    assert_all_headers_are_valid(&mem, is_tree_obj_valid);
+    obj = (cyclic_obj_t *) roots[0];
   }
 
   mndb_ygen_destroy(&mem);
@@ -340,6 +386,7 @@ test_mem()
   {
     test_mem_flat();
     test_mem_tree();
+    test_mem_cyclic();
   }
 }
 
@@ -348,6 +395,8 @@ test_mem()
 int
 main(int argc, const char *argv[])
 {
+  mndb_init(&argc, &argv);
+
   if(argc > 1) g_n_iterations = atoi(argv[1]);
   if(argc > 2) g_n_objs = atoi(argv[2]);
   if(argc > 3) g_max_mem = atol(argv[3]);

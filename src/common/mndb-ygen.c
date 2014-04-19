@@ -21,7 +21,7 @@
   }\
 }
 
-static const char *const _mndb_log_tag = "mem";
+static const char *const _mndb_log_tag = "ygen";
 
 void
 mndb_ygen_init(mndb_ygen_t *mem, size_t size, mndb_ygen_flags_t flags)
