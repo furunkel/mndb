@@ -3,11 +3,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <assert.h>
 
-#define MNDB_MEM_ALIGN ((size_t)8)
+#define MNDB_MEM_ALIGN ((size_t)sizeof(uintptr_t))
 
 typedef enum {
-  MNDB_MEM_FLAGS_NONE    = 0,
+  MNDB_MEM_FLAGS_NONE = 0,
 } mndb_mem_flags_t;
 
 
@@ -30,11 +31,14 @@ typedef struct mndb_mem_s mndb_mem_t;
 typedef void (*mndb_mem_copy_func_t)(mndb_mem_t *mem, uint8_t *data);
 
 typedef struct {
-  size_t size;
   mndb_mem_copy_func_t copy_func;
   uint8_t *fwd_ptr;
+  size_t size;
   uint8_t data[];
 } mndb_mem_header_t;
+
+static_assert(sizeof(mndb_mem_header_t) % MNDB_MEM_ALIGN == 0,
+              "sizeof(mndb_mem_header_t) must be multiple of MNDB_MEM_ALIGN");
 
 typedef bool (*mndb_mem_each_header_func_t)(mndb_mem_header_t *header,
                                             void *user_data);
