@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <inttypes.h>
 
-#include "common/mndb-mem.h"
+#include "common/mndb-ygen.h"
 #include "common/mndb-util.h"
 
 #define MNDB_EACH_HEADER_BEGIN(mem) \
@@ -13,7 +13,7 @@
   uint8_t *data_end_ptr = mem->data + mem->cur; \
   uint8_t * data_ptr = mem->data; \
   while(data_ptr < data_end_ptr) {\
-    mndb_mem_header_t *header = (mndb_mem_header_t *) data_ptr;
+    mndb_ygen_header_t *header = (mndb_ygen_header_t *) data_ptr;
 
 
 #define MNDB_EACH_HEADER_END(mem) \
@@ -24,11 +24,11 @@
 static const char *const _mndb_log_tag = "mem";
 
 void
-mndb_mem_init(mndb_mem_t *mem, size_t size, mndb_mem_flags_t flags)
+mndb_ygen_init(mndb_ygen_t *mem, size_t size, mndb_ygen_flags_t flags)
 {
   assert(size > 0);
 
-  mem->data = aligned_alloc(MNDB_MEM_ALIGN, size);
+  mem->data = aligned_alloc(MNDB_YGEN_ALIGN, size);
   mem->cur = 0;
   mem->cur2 = 0;
   mem->data2 = NULL;
@@ -38,7 +38,7 @@ mndb_mem_init(mndb_mem_t *mem, size_t size, mndb_mem_flags_t flags)
 
 
 void
-mndb_mem_destroy(mndb_mem_t *mem)
+mndb_ygen_destroy(mndb_ygen_t *mem)
 {
   if(mem->data != NULL)
   {
@@ -46,28 +46,28 @@ mndb_mem_destroy(mndb_mem_t *mem)
   }
 }
 
-mndb_mem_header_t *
-mndb_mem_header(uint8_t *ptr)
+mndb_ygen_header_t *
+mndb_ygen_header(uint8_t *ptr)
 {
-  return (mndb_mem_header_t *) (ptr - sizeof(mndb_mem_header_t));
+  return (mndb_ygen_header_t *) (ptr - sizeof(mndb_ygen_header_t));
 }
 
 
 uint8_t *
-mndb_mem_header_data(mndb_mem_header_t *header)
+mndb_ygen_header_data(mndb_ygen_header_t *header)
 {
   return header->data;
 }
 
 static uint8_t *
-mndb_mem_copy_header(mndb_mem_t *mem, mndb_mem_header_t *header)
+mndb_ygen_copy_header(mndb_ygen_t *mem, mndb_ygen_header_t *header)
 {
   if(likely(header->fwd_ptr == NULL))
   {
     header->fwd_ptr = mem->data2 + mem->cur2;
     mndb_debug("copying header %p (%p) to %p", header, header->data, header->fwd_ptr);
     mem->cur2 += header->size;
-    header = (mndb_mem_header_t *) memcpy(header->fwd_ptr, header, header->size);
+    header = (mndb_ygen_header_t *) memcpy(header->fwd_ptr, header, header->size);
 
     if(likely(header->copy_func != NULL))
     {
@@ -77,23 +77,23 @@ mndb_mem_copy_header(mndb_mem_t *mem, mndb_mem_header_t *header)
   else
   {
     mndb_debug("alredy copied header %p (%p)", header, header->data);
-    header = (mndb_mem_header_t *) (header->fwd_ptr);
+    header = (mndb_ygen_header_t *) (header->fwd_ptr);
   }
   return header->data;
 }
 
 uint8_t *
-mndb_mem_copy(mndb_mem_t *mem, uint8_t *ptr)
+mndb_ygen_copy(mndb_ygen_t *mem, uint8_t *ptr)
 {
   if(unlikely(ptr == NULL)) return NULL;
 
-  mndb_mem_header_t *header = mndb_mem_header(ptr);
-  return mndb_mem_copy_header(mem, header);
+  mndb_ygen_header_t *header = mndb_ygen_header(ptr);
+  return mndb_ygen_copy_header(mem, header);
 }
 
 
 bool
-mndb_mem_copy_from_roots(mndb_mem_t *mem, size_t size, uint8_t *roots[], size_t len)
+mndb_ygen_copy_from_roots(mndb_ygen_t *mem, size_t size, uint8_t *roots[], size_t len)
 {
   uintptr_t freed;
   bool retval = true;
@@ -110,7 +110,7 @@ mndb_mem_copy_from_roots(mndb_mem_t *mem, size_t size, uint8_t *roots[], size_t 
   assert(size >= mem->cur);
 
   mem->cur2 = 0;
-  mem->data2 = aligned_alloc(MNDB_MEM_ALIGN, size);
+  mem->data2 = aligned_alloc(MNDB_YGEN_ALIGN, size);
   if(unlikely(mem->data2 == NULL))
   {
     mndb_error("allocating to space failed");
@@ -125,10 +125,10 @@ mndb_mem_copy_from_roots(mndb_mem_t *mem, size_t size, uint8_t *roots[], size_t 
 
     if(unlikely(ptr == NULL)) continue;
 
-    mndb_mem_header_t *header = mndb_mem_header(ptr);
+    mndb_ygen_header_t *header = mndb_ygen_header(ptr);
 
     mndb_debug("about to copy root header %p (%p)", header, header->data);
-    roots[i] = mndb_mem_copy_header(mem, header);
+    roots[i] = mndb_ygen_copy_header(mem, header);
   }
 
   freed = mem->cur - mem->cur2;
@@ -152,14 +152,14 @@ done:
 }
 
 static bool
-mndb_mem_resize(mndb_mem_t *mem, size_t size, uint8_t *roots[], size_t len)
+mndb_ygen_resize(mndb_ygen_t *mem, size_t size, uint8_t *roots[], size_t len)
 {
   mndb_debug("resizing from %zd to %zd", mem->size, size);
-  return mndb_mem_copy_from_roots(mem, size, roots, len);
+  return mndb_ygen_copy_from_roots(mem, size, roots, len);
 }
 
 bool
-mndb_mem_each_header(mndb_mem_t *mem, mndb_mem_each_header_func_t cb, void *user_data)
+mndb_ygen_each_header(mndb_ygen_t *mem, mndb_ygen_each_header_func_t cb, void *user_data)
 {
   MNDB_EACH_HEADER_BEGIN(mem)
     if(!((*cb)(header, user_data))) return false;
@@ -168,7 +168,7 @@ mndb_mem_each_header(mndb_mem_t *mem, mndb_mem_each_header_func_t cb, void *user
 }
 
 bool
-mndb_mem_gc(mndb_mem_t *mem, uint8_t *roots[], size_t len)
+mndb_ygen_gc(mndb_ygen_t *mem, uint8_t *roots[], size_t len)
 {
   size_t size;
 
@@ -180,30 +180,30 @@ mndb_mem_gc(mndb_mem_t *mem, uint8_t *roots[], size_t len)
   {
     size = mem->size + mem->cur / 2;
   }
-  return mndb_mem_copy_from_roots(mem, size, roots, len);
+  return mndb_ygen_copy_from_roots(mem, size, roots, len);
 }
 
 uint8_t *
-mndb_mem_alloc(mndb_mem_t *mem,
+mndb_ygen_alloc(mndb_ygen_t *mem,
                size_t size,
-               mndb_mem_copy_func_t copy_func,
+               mndb_ygen_copy_func_t copy_func,
                uint8_t *roots[],
                size_t roots_len)
 {
   uintptr_t new_cur;
-  size_t total_size = MNDB_ALIGN(size + sizeof(mndb_mem_header_t), MNDB_MEM_ALIGN);
+  size_t total_size = MNDB_ALIGN(size + sizeof(mndb_ygen_header_t), MNDB_YGEN_ALIGN);
   new_cur = mem->cur + total_size;
 
   if(unlikely(new_cur >= mem->size))
   {
     size_t new_size = new_cur + (new_cur / 2) + (new_cur / 4);
-    if(unlikely(!mndb_mem_resize(mem, new_size, roots, roots_len)))
+    if(unlikely(!mndb_ygen_resize(mem, new_size, roots, roots_len)))
     {
       return NULL;
     }
   }
 
-  mndb_mem_header_t *header = (mndb_mem_header_t *)(mem->data + mem->cur);
+  mndb_ygen_header_t *header = (mndb_ygen_header_t *)(mem->data + mem->cur);
 
   mndb_debug("allocated header %p (%p) of size %zd (%zd total)", header, header->data, size, total_size);
   header->size      = total_size;

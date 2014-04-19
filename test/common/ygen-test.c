@@ -1,4 +1,4 @@
-#include "common/mndb-mem.h"
+#include "common/mndb-ygen.h"
 #include "common/mndb-ptr-stack.h"
 
 #include "../test-helper.h"
@@ -15,8 +15,8 @@ static const char *const _mndb_log_tag = "mem-test";
 
 #include "../text.h"
 
-static const mndb_mem_flags_t g_flags[] = {
-  MNDB_MEM_FLAGS_NONE,
+static const mndb_ygen_flags_t g_flags[] = {
+  MNDB_YGEN_FLAGS_NONE,
 };
 
 typedef struct {
@@ -50,9 +50,9 @@ typedef bool (*obj_valid_func_t)(uint8_t *);
 
 
 static flat_obj_t *
-alloc_flat_obj(mndb_mem_t *mem, int id, size_t size, uint8_t *roots[], size_t roots_len)
+alloc_flat_obj(mndb_ygen_t *mem, int id, size_t size, uint8_t *roots[], size_t roots_len)
 {
-  flat_obj_t *obj = (flat_obj_t *) mndb_mem_alloc(mem, sizeof(flat_obj_t) + size, NULL, roots, roots_len);
+  flat_obj_t *obj = (flat_obj_t *) mndb_ygen_alloc(mem, sizeof(flat_obj_t) + size, NULL, roots, roots_len);
 
   obj->id = id;
   obj->ts = clock();
@@ -103,19 +103,19 @@ is_tree_obj_valid(uint8_t *ptr)
 }
 
 static void
-copy_tree(mndb_mem_t *mem, uint8_t *data)
+copy_tree(mndb_ygen_t *mem, uint8_t *data)
 {
   tree_obj_t *tree = (tree_obj_t *) data;
-  tree->left = (tree_obj_t *)mndb_mem_copy(mem, (uint8_t *)tree->left);
-  tree->right = (tree_obj_t *)mndb_mem_copy(mem, (uint8_t *)tree->right);
+  tree->left = (tree_obj_t *)mndb_ygen_copy(mem, (uint8_t *)tree->left);
+  tree->right = (tree_obj_t *)mndb_ygen_copy(mem, (uint8_t *)tree->right);
 }
 
 static tree_obj_t *
-alloc_random_tree_(tree_obj_t **root, mndb_mem_t *mem, mndb_ptr_stack_t *stack, int size, int id)
+alloc_random_tree_(tree_obj_t **root, mndb_ygen_t *mem, mndb_ptr_stack_t *stack, int size, int id)
 {
   if(size == 0) return NULL;
 
-  tree_obj_t *tree = (tree_obj_t *) mndb_mem_alloc(mem, sizeof(tree_obj_t),
+  tree_obj_t *tree = (tree_obj_t *) mndb_ygen_alloc(mem, sizeof(tree_obj_t),
                                                    copy_tree,
                                                    mndb_ptr_stack_data(stack),
                                                    mndb_ptr_stack_cur(stack));
@@ -165,7 +165,7 @@ alloc_random_tree_(tree_obj_t **root, mndb_mem_t *mem, mndb_ptr_stack_t *stack, 
 }
 
 static tree_obj_t *
-alloc_random_tree(mndb_mem_t *mem, int size)
+alloc_random_tree(mndb_ygen_t *mem, int size)
 {
   mndb_ptr_stack_t *stack = mndb_ptr_stack_new(1024 * 7);
   tree_obj_t *retval = alloc_random_tree_(NULL, mem, stack, size, 1);
@@ -176,31 +176,31 @@ alloc_random_tree(mndb_mem_t *mem, int size)
 }
 
 static bool
-count_headers(mndb_mem_header_t *header, void *user_data)
+count_headers(mndb_ygen_header_t *header, void *user_data)
 {
   *((uintptr_t *)user_data) += 1;
   return true;
 }
 
 static void
-assert_header_count_equals(mndb_mem_t *mem, int count)
+assert_header_count_equals(mndb_ygen_t *mem, int count)
 {
   uintptr_t actual_count = 0;
-  mndb_mem_each_header(mem, count_headers, &actual_count);
+  mndb_ygen_each_header(mem, count_headers, &actual_count);
 
   assert((int)actual_count == count);
 }
 
 
 static bool
-find_root(mndb_mem_header_t *header, void *user_data)
+find_root(mndb_ygen_header_t *header, void *user_data)
 {
   uint8_t **roots = (uint8_t **) user_data;
   size_t len = *((size_t *) roots);
 
   for(size_t i = 0; i < len; i++)
   {
-    if(roots[i] == mndb_mem_header_data(header))
+    if(roots[i] == mndb_ygen_header_data(header))
       return true;
   }
 
@@ -208,27 +208,27 @@ find_root(mndb_mem_header_t *header, void *user_data)
 }
 
 static void
-assert_all_headers_are_roots(mndb_mem_t *mem, uint8_t *roots[], size_t len)
+assert_all_headers_are_roots(mndb_ygen_t *mem, uint8_t *roots[], size_t len)
 {
   uint8_t *data = alloca(sizeof(roots) + sizeof(len));
   *((uint8_t ***)data) = roots;
   *((size_t *)(data + sizeof(roots))) = len;
 
-  assert(mndb_mem_each_header(mem, find_root, data));
+  assert(mndb_ygen_each_header(mem, find_root, data));
 }
 
 
 static bool
-check_header(mndb_mem_header_t *header, void *user_data)
+check_header(mndb_ygen_header_t *header, void *user_data)
 {
   obj_valid_func_t func = (obj_valid_func_t) user_data;
-  return (*func)(mndb_mem_header_data(header));
+  return (*func)(mndb_ygen_header_data(header));
 }
 
 static void
-assert_all_headers_are_valid(mndb_mem_t *mem, obj_valid_func_t func)
+assert_all_headers_are_valid(mndb_ygen_t *mem, obj_valid_func_t func)
 {
-  assert(mndb_mem_each_header(mem, check_header, func));
+  assert(mndb_ygen_each_header(mem, check_header, func));
 }
 
 static void
@@ -236,8 +236,8 @@ test_mem_flat()
 {
   printf("## TEST FLAT\n");
 
-  mndb_mem_t mem;
-  mndb_mem_init(&mem, 1024, MNDB_MEM_FLAGS_NONE);
+  mndb_ygen_t mem;
+  mndb_ygen_init(&mem, 1024, MNDB_YGEN_FLAGS_NONE);
 
   for(int j = 0; j < g_n_gcs; j++)
   {
@@ -272,16 +272,16 @@ test_mem_flat()
         n_roots = 0;
         assert(0);
     }
-    assert(mndb_mem_gc(&mem, roots, (size_t)n_roots));
+    assert(mndb_ygen_gc(&mem, roots, (size_t)n_roots));
 
-    if(n_roots == 0) assert(mndb_mem_used(&mem) == 0);
+    if(n_roots == 0) assert(mndb_ygen_used(&mem) == 0);
 
     assert_header_count_equals(&mem, n_roots);
     assert_all_headers_are_valid(&mem, is_flat_obj_valid);
     assert_all_headers_are_roots(&mem, roots, (size_t)n_roots);
   }
 
-  mndb_mem_destroy(&mem);
+  mndb_ygen_destroy(&mem);
 }
 
 
@@ -290,22 +290,22 @@ test_mem_tree()
 {
   printf("## TEST TREE\n");
 
-  mndb_mem_t mem;
-  mndb_mem_init(&mem, 24, MNDB_MEM_FLAGS_NONE);
+  mndb_ygen_t mem;
+  mndb_ygen_init(&mem, 24, MNDB_YGEN_FLAGS_NONE);
 
   for(int j = 0; j < g_n_gcs; j++)
   {
     uint8_t *roots[1];
     tree_obj_t *tree = alloc_random_tree(&mem, g_n_objs);
     roots[0] = (uint8_t *) tree;
-    assert(mndb_mem_gc(&mem, roots, (size_t)1));
+    assert(mndb_ygen_gc(&mem, roots, (size_t)1));
     tree = (tree_obj_t *) roots[0];
     assert_header_count_equals(&mem, g_n_objs);
     assert(tree->id == g_n_objs);
     assert_all_headers_are_valid(&mem, is_tree_obj_valid);
   }
 
-  mndb_mem_destroy(&mem);
+  mndb_ygen_destroy(&mem);
 }
 
 static void
@@ -313,22 +313,22 @@ test_mem_cyclic()
 {
   printf("## TEST CYCLIC\n");
 
-  mndb_mem_t mem;
-  mndb_mem_init(&mem, 1024, MNDB_MEM_FLAGS_NONE);
+  mndb_ygen_t mem;
+  mndb_ygen_init(&mem, 1024, MNDB_YGEN_FLAGS_NONE);
 
   for(int j = 0; j < g_n_gcs; j++)
   {
     uint8_t *roots[1];
     tree_obj_t *tree = alloc_random_tree(&mem, g_n_objs);
     roots[0] = (uint8_t *) tree;
-    assert(mndb_mem_gc(&mem, roots, (size_t)1));
+    assert(mndb_ygen_gc(&mem, roots, (size_t)1));
     tree = (tree_obj_t *) roots[0];
     assert_header_count_equals(&mem, g_n_objs);
     assert(tree->id == g_n_objs);
     assert_all_headers_are_valid(&mem, is_tree_obj_valid);
   }
 
-  mndb_mem_destroy(&mem);
+  mndb_ygen_destroy(&mem);
 }
 
 
