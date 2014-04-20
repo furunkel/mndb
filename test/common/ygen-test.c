@@ -3,6 +3,7 @@
 #include "../test-helper.h"
 #include <alloca.h>
 #include <stdio.h>
+#include <limits.h>
 
 static int g_n_iterations = 5;
 static int g_n_gcs = 8;
@@ -32,14 +33,16 @@ typedef struct {
 } flat_obj_t;
 
 typedef struct tree_obj_s {
+  int id;
   struct tree_obj_s *left;
   struct tree_obj_s *right;
-  int id;
+  uint64_t cookie;
 } tree_obj_t;
 
 typedef struct cyclic_obj_s {
   int id;
   size_t next_len;
+  uint64_t cookie;
   struct cyclic_obj_s *next[];
 } cyclic_obj_t;
 
@@ -82,6 +85,10 @@ static bool
 is_tree_obj_valid(uint8_t *ptr)
 {
   tree_obj_t *obj = (tree_obj_t *) ptr;
+
+  if(obj->cookie != 0xdeadbeefdeadbeef - (uint64_t)obj->id)
+    return false;
+
   bool valid;
 
   if(obj->left == NULL && obj->right == NULL)
@@ -97,8 +104,15 @@ is_tree_obj_valid(uint8_t *ptr)
     valid = obj->id == obj->right->id + 1;
   }
 
-  assert(valid);
   return valid;
+}
+
+
+static bool
+is_cyclic_obj_valid(uint8_t *ptr)
+{
+  cyclic_obj_t *obj = (cyclic_obj_t *) ptr;
+  return obj->cookie == 0xdeadbeefdeadbeef - (uint64_t)obj->id;
 }
 
 static void
@@ -119,7 +133,7 @@ copy_cyclic_obj(mndb_ygen_t *ygen, uint8_t *data)
   }
 }
 
-static cyclic_obj_t *
+static mndb_ptr_stack_t *
 alloc_random_graph(mndb_ygen_t *ygen, int size)
 {
   mndb_ptr_stack_t *stack = mndb_ptr_stack_new((size_t)size);
@@ -131,7 +145,9 @@ alloc_random_graph(mndb_ygen_t *ygen, int size)
                                                          0,
                                                          mndb_ptr_stack_data(stack),
                                                          mndb_ptr_stack_cur(stack));
+    obj->cookie = 0xdeadbeefdeadbeef - (uint64_t)i;
     obj->next_len = (size_t) degree;
+    obj->id = i;
     memset(obj->next, 0, obj->next_len * sizeof(cyclic_obj_t *));
     mndb_ptr_stack_push(stack, (uint8_t *)obj);
   }
@@ -147,16 +163,12 @@ alloc_random_graph(mndb_ygen_t *ygen, int size)
       }
       else
       {
-        obj->next[k] = (cyclic_obj_t *) mndb_ptr_stack_at(stack, (size_t)(rand() % (int)mndb_ptr_stack_cur(stack)));
+        obj->next[k] = (cyclic_obj_t *) mndb_ptr_stack_at(stack, (size_t)(rand() % (int)MIN(mndb_ptr_stack_cur(stack), j + 10)));
       }
     }
   }
 
-  cyclic_obj_t *obj = (cyclic_obj_t *) mndb_ptr_stack_at(stack, 0);
-
-  mndb_ptr_stack_free(stack);
-
-  return obj;
+  return stack;
 }
 
 static tree_obj_t *
@@ -206,6 +218,7 @@ alloc_random_tree_(tree_obj_t **root, mndb_ygen_t *ygen, mndb_ptr_stack_t *stack
   tree->left = left_tree;
   tree->right = right_tree;
   tree->id = right == 0 ? (left == 0 ? id : tree->left->id + 1) : tree->right->id + 1;
+  tree->cookie = 0xdeadbeefdeadbeef - (uint16_t)tree->id;
 
   mndb_debug("%p->left = %p", tree, tree->left);
   mndb_debug("%p->right = %p", tree, tree->right);
@@ -224,36 +237,36 @@ alloc_random_tree(mndb_ygen_t *ygen, int size)
   return retval;
 }
 
-static bool
+static void *
 count_headers(mndb_ygen_header_t *header, void *user_data)
 {
-  *((uintptr_t *)user_data) += 1;
-  return true;
+  return (void *)((uintptr_t)user_data + 1);
 }
 
 static void
 assert_header_count_equals(mndb_ygen_t *ygen, int count)
 {
   uintptr_t actual_count = 0;
-  mndb_ygen_each_header(ygen, count_headers, &actual_count);
+  actual_count = (uintptr_t) mndb_ygen_each_header(ygen, count_headers, (void *)actual_count);
 
   assert((int)actual_count == count);
 }
 
-
-static bool
+static void *
 find_root(mndb_ygen_header_t *header, void *user_data)
 {
+  if(user_data == NULL) return NULL;
+
   uint8_t **roots = (uint8_t **) user_data;
   size_t len = *((size_t *) roots);
 
   for(size_t i = 0; i < len; i++)
   {
     if(roots[i] == mndb_ygen_header_data(header))
-      return true;
+      return user_data;
   }
 
-  return false;
+  return NULL;
 }
 
 static void
@@ -267,11 +280,20 @@ assert_all_headers_are_roots(mndb_ygen_t *ygen, uint8_t *roots[], size_t len)
 }
 
 
-static bool
+static void *
 check_header(mndb_ygen_header_t *header, void *user_data)
 {
+  if(user_data == NULL) return NULL;
+
   obj_valid_func_t func = (obj_valid_func_t) user_data;
-  return (*func)(mndb_ygen_header_data(header));
+  if((*func)(mndb_ygen_header_data(header)))
+  {
+    return user_data;
+  }
+  else
+  {
+    return NULL;
+  }
 }
 
 static void
@@ -348,6 +370,9 @@ test_mem_tree()
     uint8_t *roots[1];
     tree_obj_t *tree = alloc_random_tree(&ygen, g_n_objs);
     roots[0] = (uint8_t *) tree;
+
+    if(j == 0) assert_header_count_equals(&ygen, g_n_objs);
+
     assert(mndb_ygen_gc(&ygen, roots, (size_t)1));
     tree = (tree_obj_t *) roots[0];
     assert_header_count_equals(&ygen, g_n_objs);
@@ -356,6 +381,28 @@ test_mem_tree()
   }
 
   mndb_ygen_destroy(&ygen);
+}
+
+static void
+mark_node(cyclic_obj_t *node, int comp_sizes[], int id)
+{
+  if(comp_sizes[node->id] != INT_MIN) return;
+
+  if(node->id == id)
+  {
+    comp_sizes[node->id] = 0;
+  }
+  else
+  {
+    comp_sizes[node->id] = -id;
+  }
+
+  comp_sizes[id]++;
+  mndb_debug("c %d", comp_sizes[id]);
+  for(size_t i = 0; i < node->next_len; i++)
+  {
+    mark_node(node->next[i], comp_sizes, id);
+  }
 }
 
 static void
@@ -370,11 +417,48 @@ test_mem_cyclic()
   for(int j = 0; j < g_n_gcs; j++)
   {
     uint8_t *roots[1];
-    cyclic_obj_t *obj = alloc_random_graph(&ygen, g_n_objs);
-    roots[0] = (uint8_t *) obj;
+    mndb_ptr_stack_t *nodes = alloc_random_graph(&ygen, g_n_objs);
+    int *comp_sizes = malloc((size_t)g_n_objs * sizeof(int));
+    for(int i = 0; i < g_n_objs; i++) comp_sizes[i] = INT_MIN;
+
+    for(size_t i = 0; i < mndb_ptr_stack_cur(nodes); i++)
+    {
+      cyclic_obj_t *node = (cyclic_obj_t *) mndb_ptr_stack_at(nodes, i);
+      mndb_debug("marking %d", node->id);
+      mark_node(node, comp_sizes, node->id);
+    }
+
+    cyclic_obj_t *root = NULL;
+    int root_comp_size = -1;
+
+    for(size_t i = 0; i < mndb_ptr_stack_cur(nodes); i++)
+    {
+      cyclic_obj_t *node = (cyclic_obj_t *) mndb_ptr_stack_at(nodes, i);
+      mndb_debug("count %d -> %d", node->id,comp_sizes[node->id] );
+      if(comp_sizes[node->id] > 0)
+      {
+        root = node;
+        root_comp_size = comp_sizes[node->id];
+        break;
+      }
+    }
+
+    assert(root != NULL);
+    assert(root_comp_size > 0);
+
+    roots[0] = (uint8_t *) root;
+
+    if(j == 0) assert_header_count_equals(&ygen, g_n_objs);
+
     assert(mndb_ygen_gc(&ygen, roots, (size_t)1));
-    obj = (cyclic_obj_t *) roots[0];
+
+    assert_header_count_equals(&ygen, root_comp_size);
+    assert_all_headers_are_valid(&ygen, is_cyclic_obj_valid);
+
+    mndb_ptr_stack_free(nodes);
+    free(comp_sizes);
   }
+
 
   mndb_ygen_destroy(&ygen);
 }

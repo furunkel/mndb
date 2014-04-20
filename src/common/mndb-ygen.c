@@ -155,13 +155,13 @@ mndb_ygen_resize(mndb_ygen_t *ygen, size_t size, uint8_t *roots[], size_t len)
   return mndb_ygen_copy_from_roots(ygen, size, roots, len);
 }
 
-bool
+void *
 mndb_ygen_each_header(mndb_ygen_t *ygen, mndb_ygen_each_header_func_t cb, void *user_data)
 {
   EACH_HEADER_BEGIN(ygen)
-    if(!((*cb)(header, user_data))) return false;
+    user_data = ((*cb)(header, user_data));
   EACH_HEADER_END(ygen)
-  return true;
+  return user_data;
 }
 
 bool
@@ -189,8 +189,9 @@ mndb_ygen_alloc(mndb_ygen_t *ygen,
 {
 
   size_t new_cur;
-  size_t total_size = MNDB_ALIGN(size + sizeof(mndb_ygen_header_t), MNDB_YGEN_ALIGN);
+  size_t total_size = sizeof(mndb_ygen_header_t) + MNDB_ALIGN(size, MNDB_YGEN_ALIGN);
 
+  assert(size > 0);
   assert(total_size <= MNDB_YGEN_MAX_ALLOC_SIZE);
 
   new_cur = ygen->cur + total_size;
@@ -204,6 +205,7 @@ mndb_ygen_alloc(mndb_ygen_t *ygen,
     {
       return NULL;
     }
+    new_cur = ygen->cur + total_size;
   }
 
   mndb_ygen_header_t *header = (mndb_ygen_header_t *)(ygen->data + ygen->cur);
@@ -216,12 +218,14 @@ mndb_ygen_alloc(mndb_ygen_t *ygen,
   header->size = (uint16_t) total_size;
   header->age = 0;
 
+  assert(header->size > 0);
 
   mndb_debug("allocated header %p (%p) of size %d (%zd data)", header, header->data, header->size, size);
-  mndb_debug("cur from %zd to %zd", ygen->cur, new_cur);
+  mndb_debug("cur from %zd to %zd , %zd %zd", ygen->cur, new_cur, total_size, ygen->cur + total_size);
 
   ygen->cur = new_cur;
 
+  assert((uintptr_t)ygen->data + new_cur == (uintptr_t)header + header->size);
   return header->data;
 }
 

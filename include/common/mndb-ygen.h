@@ -15,7 +15,6 @@ typedef enum {
 } mndb_ygen_flags_t;
 
 
-
 #define mndb_ygen_flags(ygen) ((ygen)->flags)
 #define mndb_ygen_size(ygen) ((ygen)->size)
 #define mndb_ygen_cur(ygen) ((ygen)->cur)
@@ -44,7 +43,7 @@ typedef struct {
 } mndb_ygen_header_t;
 
 
-typedef bool (*mndb_ygen_each_header_func_t)(mndb_ygen_header_t *header,
+typedef void * (*mndb_ygen_each_header_func_t)(mndb_ygen_header_t *header,
                                             void *user_data);
 
 mndb_ygen_header_t *
@@ -65,7 +64,7 @@ mndb_ygen_destroy(mndb_ygen_t *ygen);
 uint8_t *
 mndb_ygen_header_data(mndb_ygen_header_t *header);
 
-bool
+void *
 mndb_ygen_each_header(mndb_ygen_t *ygen, mndb_ygen_each_header_func_t cb, void *user_data);
 
 uint8_t *
