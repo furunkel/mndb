@@ -8,15 +8,15 @@
 #include "common/mndb-ygen.h"
 #include "common/mndb-util.h"
 
-#define MNDB_EACH_HEADER_BEGIN(mem) \
+#define EACH_HEADER_BEGIN(ygen) \
 {                                   \
-  uint8_t *data_end_ptr = mem->data + mem->cur; \
-  uint8_t * data_ptr = mem->data; \
+  uint8_t *data_end_ptr = ygen->data + ygen->cur; \
+  uint8_t * data_ptr = ygen->data; \
   while(data_ptr < data_end_ptr) {\
     mndb_ygen_header_t *header = (mndb_ygen_header_t *) data_ptr;
 
 
-#define MNDB_EACH_HEADER_END(mem) \
+#define EACH_HEADER_END(ygen) \
     data_ptr += header->size; \
   }\
 }
@@ -24,32 +24,36 @@
 static const char *const _mndb_log_tag = "ygen";
 
 void
-mndb_ygen_init(mndb_ygen_t *mem, size_t size, mndb_ygen_flags_t flags)
+mndb_ygen_init(mndb_ygen_t *ygen, size_t size, mndb_ygen_flags_t flags)
 {
   assert(size > 0);
 
-  mem->data = aligned_alloc(MNDB_YGEN_ALIGN, size);
-  mem->cur = 0;
-  mem->cur2 = 0;
-  mem->data2 = NULL;
-  mem->size = mem->data != NULL ? size : 0;
-  mem->flags = flags;
+  ygen->data = aligned_alloc(MNDB_YGEN_ALIGN, size);
+  if(ygen->data == NULL)
+  {
+    mndb_error("allocating ygen failed");
+  }
+  ygen->cur = 0;
+  ygen->cur2 = 0;
+  ygen->data2 = NULL;
+  ygen->size = ygen->data != NULL ? size : 0;
+  ygen->flags = flags;
+  ygen->copy_funcs_cur = 0;
 }
 
-
 void
-mndb_ygen_destroy(mndb_ygen_t *mem)
+mndb_ygen_destroy(mndb_ygen_t *ygen)
 {
-  if(mem->data != NULL)
+  if(ygen->data != NULL)
   {
-    free(mem->data);
+    free(ygen->data);
   }
 }
 
 mndb_ygen_header_t *
 mndb_ygen_header(uint8_t *ptr)
 {
-  return (mndb_ygen_header_t *) (ptr - sizeof(mndb_ygen_header_t));
+  return (mndb_ygen_header_t *) (ptr - offsetof(mndb_ygen_header_t, data));
 }
 
 
@@ -60,58 +64,58 @@ mndb_ygen_header_data(mndb_ygen_header_t *header)
 }
 
 static uint8_t *
-mndb_ygen_copy_header(mndb_ygen_t *mem, mndb_ygen_header_t *header)
+mndb_ygen_copy_header(mndb_ygen_t *ygen, mndb_ygen_header_t *header)
 {
   if(likely(header->fwd_ptr == NULL))
   {
-    header->fwd_ptr = mem->data2 + mem->cur2;
-    mndb_debug("copying header %p (%p) to %p", header, header->data, header->fwd_ptr);
-    mem->cur2 += header->size;
+    header->fwd_ptr = ygen->data2 + ygen->cur2;
+    mndb_debug("copying header %p (data: %p, size: %d) to %p", header, header->data, header->size, header->fwd_ptr);
+    ygen->cur2 += header->size;
     header = (mndb_ygen_header_t *) memcpy(header->fwd_ptr, header, header->size);
 
-    if(likely(header->copy_func != NULL))
+    if(likely(header->copy_func_idx < ygen->copy_funcs_cur))
     {
-      (*header->copy_func)(mem, header->data);
+      (*ygen->copy_funcs[header->copy_func_idx])(ygen, header->data);
     }
   }
   else
   {
-    mndb_debug("alredy copied header %p (%p)", header, header->data);
+    mndb_debug("already copied header %p (%p)", header, header->data);
     header = (mndb_ygen_header_t *) (header->fwd_ptr);
   }
   return header->data;
 }
 
 uint8_t *
-mndb_ygen_copy(mndb_ygen_t *mem, uint8_t *ptr)
+mndb_ygen_copy(mndb_ygen_t *ygen, uint8_t *ptr)
 {
   if(unlikely(ptr == NULL)) return NULL;
 
   mndb_ygen_header_t *header = mndb_ygen_header(ptr);
-  return mndb_ygen_copy_header(mem, header);
+  return mndb_ygen_copy_header(ygen, header);
 }
 
 
 bool
-mndb_ygen_copy_from_roots(mndb_ygen_t *mem, size_t size, uint8_t *roots[], size_t len)
+mndb_ygen_copy_from_roots(mndb_ygen_t *ygen, size_t size, uint8_t *roots[], size_t len)
 {
   uintptr_t freed;
   bool retval = true;
 
-  if((len == 0 || roots == NULL) && size <= mem->size)
+  if((len == 0 || roots == NULL) && size <= ygen->size)
   {
-    freed = mem->cur;
-    mem->cur = 0;
+    freed = ygen->cur;
+    ygen->cur = 0;
 
     retval = true;
     goto done;
   }
 
-  assert(size >= mem->cur);
+  assert(size >= ygen->cur);
 
-  mem->cur2 = 0;
-  mem->data2 = aligned_alloc(MNDB_YGEN_ALIGN, size);
-  if(unlikely(mem->data2 == NULL))
+  ygen->cur2 = 0;
+  ygen->data2 = aligned_alloc(MNDB_YGEN_ALIGN, size);
+  if(unlikely(ygen->data2 == NULL))
   {
     mndb_error("allocating to space failed");
 
@@ -121,30 +125,23 @@ mndb_ygen_copy_from_roots(mndb_ygen_t *mem, size_t size, uint8_t *roots[], size_
 
   for(size_t i = 0; i < len; i++)
   {
-    uint8_t *ptr = roots[i];
-
-    if(unlikely(ptr == NULL)) continue;
-
-    mndb_ygen_header_t *header = mndb_ygen_header(ptr);
-
-    mndb_debug("about to copy root header %p (%p)", header, header->data);
-    roots[i] = mndb_ygen_copy_header(mem, header);
+    roots[i] = mndb_ygen_copy(ygen, roots[i]);
   }
 
-  freed = mem->cur - mem->cur2;
-  mndb_debug("gc cur from %zd to %zd", mem->cur, mem->cur2);
-  assert(mem->cur >= mem->cur2);
+  freed = ygen->cur - ygen->cur2;
+  mndb_debug("gc cur from %zd to %zd", ygen->cur, ygen->cur2);
+  assert(ygen->cur >= ygen->cur2);
 
-  free(mem->data);
-  mem->data = mem->data2;
-  mem->data2 = NULL;
-  mem->size = size;
-  mem->cur = mem->cur2;
-  mem->cur2 = 0;
+  free(ygen->data);
+  ygen->data = ygen->data2;
+  ygen->data2 = NULL;
+  ygen->size = size;
+  ygen->cur = ygen->cur2;
+  ygen->cur2 = 0;
 
-  MNDB_EACH_HEADER_BEGIN(mem)
+  EACH_HEADER_BEGIN(ygen)
     header->fwd_ptr = NULL;
-  MNDB_EACH_HEADER_END(mem)
+  EACH_HEADER_END(ygen)
 
 done:
   mndb_debug("copy gc finished with status %d (freed %" PRIuPTR " bytes)", retval, freed);
@@ -152,65 +149,88 @@ done:
 }
 
 static bool
-mndb_ygen_resize(mndb_ygen_t *mem, size_t size, uint8_t *roots[], size_t len)
+mndb_ygen_resize(mndb_ygen_t *ygen, size_t size, uint8_t *roots[], size_t len)
 {
-  mndb_debug("resizing from %zd to %zd", mem->size, size);
-  return mndb_ygen_copy_from_roots(mem, size, roots, len);
+  mndb_debug("resizing from %zd to %zd", ygen->size, size);
+  return mndb_ygen_copy_from_roots(ygen, size, roots, len);
 }
 
 bool
-mndb_ygen_each_header(mndb_ygen_t *mem, mndb_ygen_each_header_func_t cb, void *user_data)
+mndb_ygen_each_header(mndb_ygen_t *ygen, mndb_ygen_each_header_func_t cb, void *user_data)
 {
-  MNDB_EACH_HEADER_BEGIN(mem)
+  EACH_HEADER_BEGIN(ygen)
     if(!((*cb)(header, user_data))) return false;
-  MNDB_EACH_HEADER_END(mem)
+  EACH_HEADER_END(ygen)
   return true;
 }
 
 bool
-mndb_ygen_gc(mndb_ygen_t *mem, uint8_t *roots[], size_t len)
+mndb_ygen_gc(mndb_ygen_t *ygen, uint8_t *roots[], size_t len)
 {
   size_t size;
 
-  if(mem->cur >= (mem->size / 2 + mem->size / 4))
+  if(ygen->cur >= (ygen->size / 2 + ygen->size / 4))
   {
-    size = mem->size + mem->size / 2;
+    size = ygen->size + ygen->size / 2;
   }
   else
   {
-    size = mem->size + mem->cur / 2;
+    size = ygen->size + ygen->cur / 2;
   }
-  return mndb_ygen_copy_from_roots(mem, size, roots, len);
+  return mndb_ygen_copy_from_roots(ygen, size, roots, len);
 }
 
 uint8_t *
-mndb_ygen_alloc(mndb_ygen_t *mem,
-               size_t size,
-               mndb_ygen_copy_func_t copy_func,
-               uint8_t *roots[],
-               size_t roots_len)
+mndb_ygen_alloc(mndb_ygen_t *ygen,
+                size_t size,
+                uint16_t copy_func_idx,
+                uint8_t *roots[],
+                size_t roots_len)
 {
-  uintptr_t new_cur;
-  size_t total_size = MNDB_ALIGN(size + sizeof(mndb_ygen_header_t), MNDB_YGEN_ALIGN);
-  new_cur = mem->cur + total_size;
 
-  if(unlikely(new_cur >= mem->size))
+  size_t new_cur;
+  size_t total_size = MNDB_ALIGN(size + sizeof(mndb_ygen_header_t), MNDB_YGEN_ALIGN);
+
+  assert(total_size <= MNDB_YGEN_MAX_ALLOC_SIZE);
+
+  new_cur = ygen->cur + total_size;
+
+  if(unlikely(new_cur >= ygen->size))
   {
+    mndb_debug("new cur %zd (before %zd) exceeds size (%zd), resizing...", new_cur, ygen->cur, ygen->size);
+
     size_t new_size = new_cur + (new_cur / 2) + (new_cur / 4);
-    if(unlikely(!mndb_ygen_resize(mem, new_size, roots, roots_len)))
+    if(unlikely(!mndb_ygen_resize(ygen, new_size, roots, roots_len)))
     {
       return NULL;
     }
   }
 
-  mndb_ygen_header_t *header = (mndb_ygen_header_t *)(mem->data + mem->cur);
+  mndb_ygen_header_t *header = (mndb_ygen_header_t *)(ygen->data + ygen->cur);
 
-  mndb_debug("allocated header %p (%p) of size %zd (%zd total)", header, header->data, size, total_size);
-  header->size      = total_size;
-  header->copy_func = copy_func;
-  header->fwd_ptr   = NULL;
+  assert((uintptr_t)header->data % MNDB_YGEN_ALIGN == 0);
+  assert(((uintptr_t)header->data + size) <= (uintptr_t)ygen->data + new_cur);
 
-  mem->cur = new_cur;
+  header->fwd_ptr = NULL;
+  header->copy_func_idx = copy_func_idx;
+  header->size = (uint16_t) total_size;
+  header->age = 0;
+
+
+  mndb_debug("allocated header %p (%p) of size %d (%zd data)", header, header->data, header->size, size);
+  mndb_debug("cur from %zd to %zd", ygen->cur, new_cur);
+
+  ygen->cur = new_cur;
 
   return header->data;
+}
+
+uint16_t
+mndb_ygen_register_copy_func(mndb_ygen_t *ygen, mndb_ygen_copy_func_t copy_func)
+{
+  uint16_t idx = ygen->copy_funcs_cur;
+
+  ygen->copy_funcs[ygen->copy_funcs_cur++] = copy_func;
+
+  return idx;
 }
