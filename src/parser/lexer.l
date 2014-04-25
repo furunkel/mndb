@@ -196,7 +196,8 @@ update_lineno(mndb_parser_t *ctx, const char *text, size_t len)
 }
 
 #define yyctx yyextra
-#define YIELD_TOKEN(token, value)  yield_token(yyctx, token, value, new_token(yyctx, token, value));
+#define YIELD_SIMPLE_TOKEN(id) yield_token(yyctx, NEW_TOKEN(id, 0));
+
 
 #define YYLESS(n)\
   do {\
@@ -223,6 +224,7 @@ update_lineno(mndb_parser_t *ctx, const char *text, size_t len)
 
 #define YIELD_SCANNER_TOKEN(id, value) yield_scanner_token(yyctx, new_token(yyctx, id, value))
 
+#define NEW_TOKEN(t, l) new_token(yyctx, MNDB_PARSER_TOKEN_ID_##t, l)
 
 static void
 preparse_number(char *num_str, int *basep, const char *text, size_t len)
@@ -281,7 +283,7 @@ preparse_number(char *num_str, int *basep, const char *text, size_t len)
 %option noyywrap reentrant fast 8bit
 %option extra-type="mndb_parser_t *"
 
-atom [a-z]([0-9A-Za-z_]|\\ )*(/[0-9]+)?
+atom [a-z]([0-9A-Za-z_]|\\" ")*("/"[0-9]+)?
 var [A-Z_]([0-9A-Za-z_])*
 bin_digits [0-1]("_"?[0-1])*
 oct_digits [0-8]("_"?[0-8])*
@@ -315,6 +317,7 @@ utf8 ({utf8_1}|{utf8_2}|{utf8_3}|{utf8_4}|{utf8_5})
 
 %%
 
+
 {ml_comment} {
   BEGIN(ML_COMMENT);
   YYMORE();
@@ -335,7 +338,7 @@ utf8 ({utf8_1}|{utf8_2}|{utf8_3}|{utf8_4}|{utf8_5})
 
   yyctx->after_comment = true;
 
-  mndb_parser_token_t *token = new_token(yyctx, TOKEN_ML_COMMENT, len);
+  mndb_parser_token_t *token = NEW_TOKEN(ML_COMMENT, len);
   mndb_parser_token_set_value(token, MNDB_PARSER_TOKEN_TYPE_STR, buffer);
   yield_token(yyctx, token);
 
@@ -351,7 +354,7 @@ utf8 ({utf8_1}|{utf8_2}|{utf8_3}|{utf8_4}|{utf8_5})
 }
 
 <SL_COMMENT>\n {
-  mndb_parser_token_t *token = new_token(yyctx, TOKEN_SL_COMMENT, yyleng - 1);
+  mndb_parser_token_t *token = NEW_TOKEN(SL_COMMENT, yyleng - 1);
   mndb_parser_token_set_value(token, MNDB_PARSER_TOKEN_TYPE_STR, yytext + 1);
   yield_token(yyctx, token);
 
@@ -363,16 +366,10 @@ utf8 ({utf8_1}|{utf8_2}|{utf8_3}|{utf8_4}|{utf8_5})
 }
 
 "\"" {
-  mndb_parser_token_t *token = new_token(yyctx, TOKEN_SL_COMMENT, 0);
-  yyctx->pending_token = token;
-
   BEGIN(DQ_STR);
 }
 
 "'" {
-  mndb_parser_token_t *token = new_token(yyctx, TOKEN_SL_COMMENT, 0);
-  yyctx->pending_token = token;
-
  BEGIN(SQ_STR);
 }
 
@@ -381,7 +378,7 @@ utf8 ({utf8_1}|{utf8_2}|{utf8_3}|{utf8_4}|{utf8_5})
 
   char num_str[yyleng + 1];
   int base;
-  preparse_number(num_str, &base, yytext, yylen);
+  preparse_number(num_str, &base, yytext, yyleng);
 
   int_val = strtoll(num_str, NULL, base);
 
@@ -396,7 +393,7 @@ utf8 ({utf8_1}|{utf8_2}|{utf8_3}|{utf8_4}|{utf8_5})
     int_val = -int_val;
   }
 
-  mndb_parser_token_t *token = new_token(yyctx, TOKEN_SL_COMMENT, yyleng - 1);
+  mndb_parser_token_t *token = NEW_TOKEN(INT, 0);
   mndb_parser_token_set_value(token, MNDB_PARSER_TOKEN_TYPE_INT, int_val);
   return yield_token(yyctx, token);
 }
@@ -406,14 +403,15 @@ utf8 ({utf8_1}|{utf8_2}|{utf8_3}|{utf8_4}|{utf8_5})
 
   char num_str[yyleng + 1];
   int base;
-  preparse_number(num_str, base, yytext, yylen);
+  preparse_number(num_str, &base, yytext, yyleng);
 
   double_val = strtod(num_str, NULL);
 
   if(errno == ERANGE)
   {
     /* FIXME: C'mon! */
-    rb_raise(rb_eRheyParserParseError, "float literal too large");
+    mndb_fatal("float literal too large");
+    abort();
   }
 
   if(yytext[0] == '-')
@@ -421,11 +419,10 @@ utf8 ({utf8_1}|{utf8_2}|{utf8_3}|{utf8_4}|{utf8_5})
     double_val = -double_val;
   }
 
-  mndb_parser_token_t *token = new_token(yyctx, TOKEN_SL_COMMENT, yyleng - 1);
+  mndb_parser_token_t *token = NEW_TOKEN(FLOAT, 0);
   mndb_parser_token_set_value(token, MNDB_PARSER_TOKEN_TYPE_FLOAT, double_val);
   return yield_token(yyctx, token);
 }
-
 
 <DQ_STR>{
  "\\\"" {
@@ -433,6 +430,9 @@ utf8 ({utf8_1}|{utf8_2}|{utf8_3}|{utf8_4}|{utf8_5})
   }
 
   "\"" {
+    mndb_parser_token_t *token = NEW_TOKEN(DBLQ_STR, yyleng - 2);
+    mndb_parser_token_set_value(token, MNDB_PARSER_TOKEN_TYPE_STR, yytext + 1);
+    yield_token(yyctx, token);
     BEGIN(INITIAL);
   }
 
@@ -447,6 +447,9 @@ utf8 ({utf8_1}|{utf8_2}|{utf8_3}|{utf8_4}|{utf8_5})
   }
 
   "'" {
+    mndb_parser_token_t *token = NEW_TOKEN(SNGLQ_STR, yyleng - 2);
+    mndb_parser_token_set_value(token, MNDB_PARSER_TOKEN_TYPE_STR, yytext + 1);
+    yield_token(yyctx, token);
     BEGIN(INITIAL);
   }
 
@@ -456,27 +459,120 @@ utf8 ({utf8_1}|{utf8_2}|{utf8_3}|{utf8_4}|{utf8_5})
 }
 
 "." {
-  mndb_parser_token_t *token = new_token(yyctx, TOKEN_ASSERT, 0);
+  mndb_parser_token_t *token = NEW_TOKEN(ASSERT, 0);
   return yield_token(yyctx, token);
 }
 
 "?" {
-  mndb_parser_token_t *token = new_token(yyctx, TOKEN_QUERY, 0);
+  mndb_parser_token_t *token = NEW_TOKEN(QUERY, 0);
   return yield_token(yyctx, token);
 }
 
 "~" {
-  mndb_parser_token_t *token = new_token(yyctx, TOKEN_RETRACT, 0);
+  mndb_parser_token_t *token = NEW_TOKEN(RETRACT, 0);
   return yield_token(yyctx, token);
 }
 
+":-" {
+  return YIELD_SIMPLE_TOKEN(IMPLY);
+}
+
+"(" {
+  return YIELD_SIMPLE_TOKEN(LPAREN);
+}
+
+")" {
+  return YIELD_SIMPLE_TOKEN(RPAREN);
+}
+
+"[" {
+  return YIELD_SIMPLE_TOKEN(LBRACK);
+}
+
+"]" {
+  return YIELD_SIMPLE_TOKEN(RBRACK);
+}
+
+"," {
+  return YIELD_SIMPLE_TOKEN(COMMA);
+}
+
+";" {
+  return YIELD_SIMPLE_TOKEN(SEMIC);
+}
+
+"|" {
+  return YIELD_SIMPLE_TOKEN(BAR);
+}
+
+"=" {
+  return YIELD_SIMPLE_TOKEN(UNIFY);
+}
+
+"is" {
+  return YIELD_SIMPLE_TOKEN(IS);
+}
+
+"%" {
+  return YIELD_SIMPLE_TOKEN(MOD);
+}
+
+"/" {
+  return YIELD_SIMPLE_TOKEN(DIV);
+}
+
+"*" {
+  return YIELD_SIMPLE_TOKEN(MUL);
+}
+
+"-" {
+  return YIELD_SIMPLE_TOKEN(MINUS);
+}
+
+"+" {
+  return YIELD_SIMPLE_TOKEN(PLUS);
+}
+
+"**" {
+  return YIELD_SIMPLE_TOKEN(POW);
+}
+
+"<<" {
+  return YIELD_SIMPLE_TOKEN(LSHIFT);
+}
+
+">>" {
+  return YIELD_SIMPLE_TOKEN(RSHIFT);
+}
+
+"&" {
+  return YIELD_SIMPLE_TOKEN(AMP);
+}
+
+{atom} {
+  mndb_parser_token_t *token = NEW_TOKEN(ATOM, yyleng);
+  mndb_parser_token_set_value(token, MNDB_PARSER_TOKEN_TYPE_STR, yytext);
+  return yield_token(yyctx, token);
+}
+
+{var} {
+  mndb_parser_token_t *token = NEW_TOKEN(VAR, yyleng);
+  mndb_parser_token_set_value(token, MNDB_PARSER_TOKEN_TYPE_STR, yytext);
+  return yield_token(yyctx, token);
+}
+
+{regexp} {
+  mndb_parser_token_t *token = NEW_TOKEN(REGEXP, yyleng - 2);
+  mndb_parser_token_set_value(token, MNDB_PARSER_TOKEN_TYPE_STR, yytext + 1);
+  return yield_token(yyctx, token);
+}
 
 (" "|"\n")+ {
   update_lineno(yyctx, yytext, yyleng);
 }
 
 . {
-  mndb_warn("invalid token '%.*s'", yyleng, yytext);
+  mndb_warn("invalid token '%.*s'", (int)yyleng, yytext);
 }
 
 %%

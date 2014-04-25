@@ -5,6 +5,12 @@
 #include <string.h>
 
 #include "parser/mndb-parser.h"
+#include "gen/parser.h"
+#include "gen/lexer.h"
+
+void *ParseAlloc(void *(*mallocProc)(size_t));
+void ParseFree(void *p, void (*freeProc)(void*));
+void Parse(void *, mndb_parser_token_id_t, mndb_parser_token_t *, _mndb_parser_ctx_t *ctx);
 
 mndb_parser_token_t *
 mndb_parser_token_new(size_t size)
@@ -68,4 +74,50 @@ void
 mndb_parser_token_free(mndb_parser_token_t *token)
 {
   free(token);
+}
+
+mndb_parser_t *
+mndb_parser_new(mndb_parser_mode_t mode)
+{
+  mndb_parser_t *parser = (mndb_parser_t *) malloc(sizeof(mndb_parser_t));
+  yyscan_t scanner;
+
+  yylex_init_extra((void *)parser, &scanner);
+
+  parser->scanner = scanner;
+
+  if(mode == MNDB_PARSER_MODE_PARSE)
+  {
+    parser->parser = ParseAlloc(malloc);
+    /*ParseTrace(stderr, ""); */
+  }
+  else
+  {
+    parser->parser = NULL;
+  }
+
+  return parser;
+}
+
+
+mndb_ast_t *
+mndb_parser_parse(mndb_parser_t *parser, const char *buf, size_t len)
+{
+  YY_BUFFER_STATE buffer = NULL;
+  buffer = yy_scan_bytes(buf, len, parser->scanner);
+
+  _mndb_parser_ctx_t ctx = {.parser = parser, .root = mndb_ast_new(0)};
+
+  while(yylex(parser->scanner) != 0){}
+
+  if(parser->mode == MNDB_PARSER_MODE_PARSE)
+  {
+    Parse(parser->parser, MNDB_PARSER_TOKEN_ID_EOF, NULL, &ctx);
+    ParseFree(parser->parser, free);
+  }
+
+  yy_delete_buffer(buffer, parser->scanner);
+  yylex_destroy(parser->scanner);
+
+  return ctx.root;
 }

@@ -1,7 +1,9 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdlib.h>
 #include <stdbool.h>
+
 
 typedef enum {
   MNDB_PARSER_MODE_SCAN,
@@ -16,7 +18,7 @@ typedef enum {
 } mndb_parser_token_type_t;
 
 typedef enum {
-  MNDB_PARSER_TOKEN_ID_INVALID,
+  MNDB_PARSER_TOKEN_ID_EOF,
   MNDB_PARSER_TOKEN_ID_DBLQ_STR,
   MNDB_PARSER_TOKEN_ID_SNGLQ_STR,
   MNDB_PARSER_TOKEN_ID_INT,
@@ -25,7 +27,7 @@ typedef enum {
   MNDB_PARSER_TOKEN_ID_ML_COMMENT,
   MNDB_PARSER_TOKEN_ID_ATOM,
   MNDB_PARSER_TOKEN_ID_REGEXP,
-  MNDB_PARSER_TOKEN_ID_IMPLI,
+  MNDB_PARSER_TOKEN_ID_IMPLY,
   MNDB_PARSER_TOKEN_ID_QUERY,
   MNDB_PARSER_TOKEN_ID_ASSERT,
   MNDB_PARSER_TOKEN_ID_RETRACT,
@@ -45,6 +47,11 @@ typedef enum {
   MNDB_PARSER_TOKEN_ID_MUL,
   MNDB_PARSER_TOKEN_ID_MINUS,
   MNDB_PARSER_TOKEN_ID_PLUS,
+  MNDB_PARSER_TOKEN_ID_POW,
+  MNDB_PARSER_TOKEN_ID_LSHIFT,
+  MNDB_PARSER_TOKEN_ID_RSHIFT,
+  MNDB_PARSER_TOKEN_ID_AMP,
+
 } mndb_parser_token_id_t;
 
 typedef enum {
@@ -94,8 +101,14 @@ struct mndb_parser_s {
   char *src;
 
   bool after_comment;
-
 };
+
+#include "parser/mndb-ast.h"
+
+typedef struct  {
+  mndb_parser_t *parser;
+  mndb_ast_t *root;
+} _mndb_parser_ctx_t;
 
 mndb_parser_token_t *
 mndb_parser_token_new(size_t size);

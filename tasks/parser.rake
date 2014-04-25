@@ -41,7 +41,7 @@ namespace :parser do
   file parser_gen_file => [gen_dir, parser_src_file] do |t|
     cp parser_src_file, t.prerequisites[0]
     chdir t.prerequisites[0] do
-      sh "lemon -s #{parser_src_file.pathmap '%f'}"
+      sh "lemon -s T=#{File.join $root, 'src/parser/_lempar.c'}  #{parser_src_file.pathmap '%f'}"
     end
   end
 end
