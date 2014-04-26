@@ -10,7 +10,7 @@ static const char *const _mndb_log_tag = "init";
 bool
 mndb_init(int *argc, const char ***argv)
 {
-  char *log_level_str = getenv(MNDB_ENVVAR_DEBUG);
+  char *log_level_str = getenv(MNDB_ENVVAR_LOG);
   if(log_level_str == NULL)
   {
     _mndb_log_level = MNDB_LOG_LEVEL_WARN;
@@ -21,7 +21,7 @@ mndb_init(int *argc, const char ***argv)
     long int log_level = strtol(log_level_str, &end, 10);
     if(end == log_level_str || *end != '\0' || errno == ERANGE)
     {
-      mndb_fatal("invalid value for "MNDB_ENVVAR_DEBUG);
+      mndb_fatal("invalid value for "MNDB_ENVVAR_LOG);
       abort();
     }
     else

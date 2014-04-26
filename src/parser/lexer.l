@@ -3,9 +3,11 @@
 #include "parser/mndb-parser.h"
 #include "common/mndb-util.h"
 
+#include "gen/parser.h"
+
 static const char const* _mndb_log_tag = "lexer";
 
-void Parse(void *, mndb_parser_token_id_t, mndb_parser_token_t *, mndb_parser_t *);
+void Parse(void *, int, mndb_parser_token_t *, mndb_parser_t *);
 
 void
 yield_scanner_token(mndb_parser_t *ctx, mndb_parser_token_t *token)
@@ -21,7 +23,7 @@ new_token(mndb_parser_t *ctx, int token_id, size_t len)
 {
   mndb_parser_token_t *token = mndb_parser_token_new(len);
 
-  token->id = (int32_t) token_id;
+  token->id = (uint32_t) token_id;
   token->line = ctx->line;
   token->col = ctx->last_col;
   token->begin = ctx->last_pos;
@@ -31,21 +33,21 @@ new_token(mndb_parser_t *ctx, int token_id, size_t len)
 }
 
 static int
-yield_token(mndb_parser_t *ctx, mndb_parser_token_t *token)
+yield_token(_mndb_parser_ctx_t *ctx, mndb_parser_token_t *token)
 {
-  ctx->last_token = token;
+  ctx->parser->last_token = token;
 
   /* either scan or parse, never both */
-  if(ctx->mode == MNDB_PARSER_MODE_SCAN)
+  if(ctx->parser->mode == MNDB_PARSER_MODE_SCAN)
   {
     yield_scanner_token(ctx, token);
   }
   else
   {
-    Parse(ctx->parser, token->id, token, ctx->scanner);
+    Parse(ctx->parser->parser, (int)token->id, token, ctx);
   }
 
-  return token->id;
+  return (int)token->id;
 }
 
 static size_t
@@ -195,8 +197,8 @@ update_lineno(mndb_parser_t *ctx, const char *text, size_t len)
   }
 }
 
-#define yyctx yyextra
-#define YIELD_SIMPLE_TOKEN(id) yield_token(yyctx, NEW_TOKEN(id, 0));
+#define yyctx (yyextra->parser)
+#define YIELD_SIMPLE_TOKEN(id) yield_token(yyextra, NEW_TOKEN(id, 0));
 
 
 #define YYLESS(n)\
@@ -281,7 +283,7 @@ preparse_number(char *num_str, int *basep, const char *text, size_t len)
 %}
 
 %option noyywrap reentrant fast 8bit
-%option extra-type="mndb_parser_t *"
+%option extra-type="_mndb_parser_ctx_t *"
 
 atom [a-z]([0-9A-Za-z_]|\\" ")*("/"[0-9]+)?
 var [A-Z_]([0-9A-Za-z_])*
@@ -340,7 +342,7 @@ utf8 ({utf8_1}|{utf8_2}|{utf8_3}|{utf8_4}|{utf8_5})
 
   mndb_parser_token_t *token = NEW_TOKEN(ML_COMMENT, len);
   mndb_parser_token_set_value(token, MNDB_PARSER_TOKEN_TYPE_STR, buffer);
-  yield_token(yyctx, token);
+  yield_token(yyextra, token);
 
   update_lineno(yyctx, yytext, yyleng);
   BEGIN(INITIAL);
@@ -356,7 +358,7 @@ utf8 ({utf8_1}|{utf8_2}|{utf8_3}|{utf8_4}|{utf8_5})
 <SL_COMMENT>\n {
   mndb_parser_token_t *token = NEW_TOKEN(SL_COMMENT, yyleng - 1);
   mndb_parser_token_set_value(token, MNDB_PARSER_TOKEN_TYPE_STR, yytext + 1);
-  yield_token(yyctx, token);
+  yield_token(yyextra, token);
 
   update_lineno(yyctx, yytext, yyleng);
   BEGIN(INITIAL);
@@ -395,7 +397,7 @@ utf8 ({utf8_1}|{utf8_2}|{utf8_3}|{utf8_4}|{utf8_5})
 
   mndb_parser_token_t *token = NEW_TOKEN(INT, 0);
   mndb_parser_token_set_value(token, MNDB_PARSER_TOKEN_TYPE_INT, int_val);
-  return yield_token(yyctx, token);
+  return yield_token(yyextra, token);
 }
 
 {float} {
@@ -421,7 +423,7 @@ utf8 ({utf8_1}|{utf8_2}|{utf8_3}|{utf8_4}|{utf8_5})
 
   mndb_parser_token_t *token = NEW_TOKEN(FLOAT, 0);
   mndb_parser_token_set_value(token, MNDB_PARSER_TOKEN_TYPE_FLOAT, double_val);
-  return yield_token(yyctx, token);
+  return yield_token(yyextra, token);
 }
 
 <DQ_STR>{
@@ -432,7 +434,7 @@ utf8 ({utf8_1}|{utf8_2}|{utf8_3}|{utf8_4}|{utf8_5})
   "\"" {
     mndb_parser_token_t *token = NEW_TOKEN(DBLQ_STR, yyleng - 2);
     mndb_parser_token_set_value(token, MNDB_PARSER_TOKEN_TYPE_STR, yytext + 1);
-    yield_token(yyctx, token);
+    yield_token(yyextra, token);
     BEGIN(INITIAL);
   }
 
@@ -449,7 +451,7 @@ utf8 ({utf8_1}|{utf8_2}|{utf8_3}|{utf8_4}|{utf8_5})
   "'" {
     mndb_parser_token_t *token = NEW_TOKEN(SNGLQ_STR, yyleng - 2);
     mndb_parser_token_set_value(token, MNDB_PARSER_TOKEN_TYPE_STR, yytext + 1);
-    yield_token(yyctx, token);
+    yield_token(yyextra, token);
     BEGIN(INITIAL);
   }
 
@@ -460,17 +462,17 @@ utf8 ({utf8_1}|{utf8_2}|{utf8_3}|{utf8_4}|{utf8_5})
 
 "." {
   mndb_parser_token_t *token = NEW_TOKEN(ASSERT, 0);
-  return yield_token(yyctx, token);
+  return yield_token(yyextra, token);
 }
 
 "?" {
   mndb_parser_token_t *token = NEW_TOKEN(QUERY, 0);
-  return yield_token(yyctx, token);
+  return yield_token(yyextra, token);
 }
 
 "~" {
   mndb_parser_token_t *token = NEW_TOKEN(RETRACT, 0);
-  return yield_token(yyctx, token);
+  return yield_token(yyextra, token);
 }
 
 ":-" {
@@ -537,34 +539,22 @@ utf8 ({utf8_1}|{utf8_2}|{utf8_3}|{utf8_4}|{utf8_5})
   return YIELD_SIMPLE_TOKEN(POW);
 }
 
-"<<" {
-  return YIELD_SIMPLE_TOKEN(LSHIFT);
-}
-
-">>" {
-  return YIELD_SIMPLE_TOKEN(RSHIFT);
-}
-
-"&" {
-  return YIELD_SIMPLE_TOKEN(AMP);
-}
-
 {atom} {
   mndb_parser_token_t *token = NEW_TOKEN(ATOM, yyleng);
   mndb_parser_token_set_value(token, MNDB_PARSER_TOKEN_TYPE_STR, yytext);
-  return yield_token(yyctx, token);
+  return yield_token(yyextra, token);
 }
 
 {var} {
   mndb_parser_token_t *token = NEW_TOKEN(VAR, yyleng);
   mndb_parser_token_set_value(token, MNDB_PARSER_TOKEN_TYPE_STR, yytext);
-  return yield_token(yyctx, token);
+  return yield_token(yyextra, token);
 }
 
 {regexp} {
   mndb_parser_token_t *token = NEW_TOKEN(REGEXP, yyleng - 2);
   mndb_parser_token_set_value(token, MNDB_PARSER_TOKEN_TYPE_STR, yytext + 1);
-  return yield_token(yyctx, token);
+  return yield_token(yyextra, token);
 }
 
 (" "|"\n")+ {

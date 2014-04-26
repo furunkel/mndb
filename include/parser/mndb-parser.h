@@ -18,43 +18,6 @@ typedef enum {
 } mndb_parser_token_type_t;
 
 typedef enum {
-  MNDB_PARSER_TOKEN_ID_EOF,
-  MNDB_PARSER_TOKEN_ID_DBLQ_STR,
-  MNDB_PARSER_TOKEN_ID_SNGLQ_STR,
-  MNDB_PARSER_TOKEN_ID_INT,
-  MNDB_PARSER_TOKEN_ID_FLOAT,
-  MNDB_PARSER_TOKEN_ID_SL_COMMENT,
-  MNDB_PARSER_TOKEN_ID_ML_COMMENT,
-  MNDB_PARSER_TOKEN_ID_ATOM,
-  MNDB_PARSER_TOKEN_ID_REGEXP,
-  MNDB_PARSER_TOKEN_ID_IMPLY,
-  MNDB_PARSER_TOKEN_ID_QUERY,
-  MNDB_PARSER_TOKEN_ID_ASSERT,
-  MNDB_PARSER_TOKEN_ID_RETRACT,
-  MNDB_PARSER_TOKEN_ID_VAR,
-  MNDB_PARSER_TOKEN_ID_LPAREN,
-  MNDB_PARSER_TOKEN_ID_RPAREN,
-  MNDB_PARSER_TOKEN_ID_LBRACK,
-  MNDB_PARSER_TOKEN_ID_RBRACK,
-  MNDB_PARSER_TOKEN_ID_COMMA,
-  MNDB_PARSER_TOKEN_ID_SEMIC,
-  MNDB_PARSER_TOKEN_ID_COLON,
-  MNDB_PARSER_TOKEN_ID_BAR,
-  MNDB_PARSER_TOKEN_ID_UNIFY,
-  MNDB_PARSER_TOKEN_ID_IS,
-  MNDB_PARSER_TOKEN_ID_MOD,
-  MNDB_PARSER_TOKEN_ID_DIV,
-  MNDB_PARSER_TOKEN_ID_MUL,
-  MNDB_PARSER_TOKEN_ID_MINUS,
-  MNDB_PARSER_TOKEN_ID_PLUS,
-  MNDB_PARSER_TOKEN_ID_POW,
-  MNDB_PARSER_TOKEN_ID_LSHIFT,
-  MNDB_PARSER_TOKEN_ID_RSHIFT,
-  MNDB_PARSER_TOKEN_ID_AMP,
-
-} mndb_parser_token_id_t;
-
-typedef enum {
   MNDB_PARSER_TOKEN_FLAGS_NONE,
   MNDB_PARSER_TOKEN_FLAGS_SQ_STR,
   MNDB_PARSER_TOKEN_FLAGS_DQ_STR,
@@ -68,7 +31,7 @@ typedef struct {
   uint32_t col;
   uint32_t refc;
 
-  mndb_parser_token_id_t id;
+  uint32_t id;
   mndb_parser_token_type_t type;
 
   int64_t int_val;
@@ -119,4 +82,11 @@ mndb_parser_token_set_value(mndb_parser_token_t *token, mndb_parser_token_type_t
 void
 mndb_parser_token_free(mndb_parser_token_t *token);
 
+mndb_parser_t *
+mndb_parser_new(mndb_parser_mode_t mode);
 
+mndb_ast_t *
+mndb_parser_parse(mndb_parser_t *parser, const char *buf, size_t len);
+
+void
+mndb_parser_free(mndb_parser_t *parser);

@@ -29,7 +29,7 @@ def gen_obj_files
 end
 
 namespace :build do
-  multitask :shared_lib => ['parser:gen', obj_files, gen_obj_files].flatten do |t|
+  task :shared_lib => ['parser:gen', obj_files, gen_obj_files].flatten do |t|
     sh "cc -shared -o #{shared_lib_file} #{(obj_files + gen_obj_files).join ' '}"
   end
 
@@ -43,7 +43,7 @@ namespace :build do
   gen_src_files.each do |gen_src_file|
     file obj_file(gen_src_file) => gen_src_file do |t|
       mkdir_p t.name.pathmap('%d')
-      sh "cc -c #{t.prerequisites[0]} -fpic -fmax-errors=4 #{(default_cc_options - ['-Werror']).join ' '} -ggdb -o #{t.name}"
+      sh "cc -c #{t.prerequisites[0]} -fpic -fmax-errors=4 #{(default_cc_options - ['-Werror']).join ' '} -I#{$build_dir} -ggdb -o #{t.name}"
     end
   end
 end

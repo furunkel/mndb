@@ -5,12 +5,19 @@
 #include <string.h>
 
 #include "parser/mndb-parser.h"
+#include "common/mndb-util.h"
+
 #include "gen/parser.h"
 #include "gen/lexer.h"
 
+#define MNDB_PARSER_AST_ROOT_MAX_CHILDREN 512
+
 void *ParseAlloc(void *(*mallocProc)(size_t));
 void ParseFree(void *p, void (*freeProc)(void*));
-void Parse(void *, mndb_parser_token_id_t, mndb_parser_token_t *, _mndb_parser_ctx_t *ctx);
+void Parse(void *, int, mndb_parser_token_t *, _mndb_parser_ctx_t *ctx);
+void ParseTrace(FILE*, const char*);
+
+extern mndb_log_level_t _mndb_log_level;
 
 mndb_parser_token_t *
 mndb_parser_token_new(size_t size)
@@ -80,21 +87,23 @@ mndb_parser_t *
 mndb_parser_new(mndb_parser_mode_t mode)
 {
   mndb_parser_t *parser = (mndb_parser_t *) malloc(sizeof(mndb_parser_t));
-  yyscan_t scanner;
 
-  yylex_init_extra((void *)parser, &scanner);
-
-  parser->scanner = scanner;
+  yylex_init(&parser->scanner);
 
   if(mode == MNDB_PARSER_MODE_PARSE)
   {
     parser->parser = ParseAlloc(malloc);
-    /*ParseTrace(stderr, ""); */
+    if(_mndb_log_level <= MNDB_LOG_LEVEL_DEBUG)
+    {
+      ParseTrace(stderr, "mndb:DEBUG:parser: ");
+    }
   }
   else
   {
     parser->parser = NULL;
   }
+
+  parser->mode = mode;
 
   return parser;
 }
@@ -106,18 +115,27 @@ mndb_parser_parse(mndb_parser_t *parser, const char *buf, size_t len)
   YY_BUFFER_STATE buffer = NULL;
   buffer = yy_scan_bytes(buf, len, parser->scanner);
 
-  _mndb_parser_ctx_t ctx = {.parser = parser, .root = mndb_ast_new(0)};
+  _mndb_parser_ctx_t ctx = {.parser = parser, .root = NULL};
 
-  while(yylex(parser->scanner) != 0){}
+  yylex_init_extra((void *)&ctx, &parser->scanner);
+
+  while(yylex(parser->scanner) != 0) {}
 
   if(parser->mode == MNDB_PARSER_MODE_PARSE)
   {
-    Parse(parser->parser, MNDB_PARSER_TOKEN_ID_EOF, NULL, &ctx);
-    ParseFree(parser->parser, free);
+    Parse(parser->parser, 0 /* eof */, NULL, &ctx);
   }
 
   yy_delete_buffer(buffer, parser->scanner);
-  yylex_destroy(parser->scanner);
 
   return ctx.root;
+}
+
+
+void
+mndb_parser_free(mndb_parser_t *parser)
+{
+  yylex_destroy(parser->scanner);
+  ParseFree(parser->parser, free);
+  free(parser);
 }

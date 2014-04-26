@@ -36,60 +36,240 @@
 %syntax_error {
 }
 
-start ::= stmts. {
+start ::= stmts(s). {
+  ctx->root = s;
 }
 
-stmts ::= stmts query. {
+stmts(ls) ::= stmts(rs) query(q). {
+  ls = mndb_ast_add_child(rs, q);
 }
 
-stmts ::= stmts retract. {
+stmts(ls) ::= stmts(rs) retract(r). {
+  ls = mndb_ast_add_child(rs, r);
 }
 
-stmts ::= stmts assert. {
+stmts(ls) ::= stmts(rs) assert(a). {
+  ls = mndb_ast_add_child(rs, a);
 }
 
-stmts ::= .
-
-const ::= ATOM.
-const ::= FLOAT.
-const ::= INT.
-const ::= REGEXP.
-
-term_list ::= term_list COMMA term.
-term_list ::= term.
-
-list ::= RBRACK LBRACK.
-list ::= RBRACK term_list LBRACK.
-list ::= RBRACK term_list BAR VAR LBRACK.
-
-pair ::= term COLON term.
-
-pair_list ::= pair_list COMMA pair.
-pair_list ::= pair.
-
-map ::= RBRACK pair_list LBRACK.
-map ::= RBRACK pair_list BAR VAR LBRACK.
-
-term ::= const.
-term ::= VAR.
-term ::= list.
-term ::= map.
+stmts(s) ::= . {
+  s = mndb_ast_new();
+}
 
 
-is_expr ::= INT.
-is_expr ::= FLOAT.
-is_expr ::= is_expr PLUS is_expr.
-is_expr ::= is_expr MINUS is_expr.
-is_expr ::= is_expr DIV is_expr.
-is_expr ::= is_expr MUL is_expr.
-is_expr ::= is_expr MOD is_expr.
-is_expr ::= MINUS is_expr.
-is_expr ::= POW is_expr.
-is_expr ::= LPAREN is_expr RPAREN.
 
-unif ::= term UNIFY term.
 
-fact ::= ATOM LPAREN term_list RPAREN.
+const(c) ::= ATOM(t). {
+  c = mndb_ast_new(MNDB_AST_TYPE_TOKEN);
+  mndb_ast_set_token(c, t);
+}
+
+const(c) ::= FLOAT(t). {
+  c = mndb_ast_new(MNDB_AST_TYPE_TOKEN);
+  mndb_ast_set_token(c, t);
+}
+
+const(c) ::= INT(t). {
+  c = mndb_ast_new(MNDB_AST_TYPE_TOKEN);
+  mndb_ast_set_token(c, t);
+}
+
+const(c) ::= REGEXP(t). {
+  c = mndb_ast_new(MNDB_AST_TYPE_TOKEN);
+  mndb_ast_set_token(c, t);
+}
+
+const(c) ::= DBLQ_STR(t). {
+  c = mndb_ast_new(MNDB_AST_TYPE_TOKEN);
+  mndb_ast_set_token(c, t);
+}
+
+const(c) ::= SNGLQ_STR(t). {
+  c = mndb_ast_new(MNDB_AST_TYPE_TOKEN);
+  mndb_ast_set_token(c, t);
+}
+
+
+
+
+term_list(ll) ::= term_list(rl) COMMA term. {
+  ll = mndb_ast_add_child(rl, t);
+}
+
+term_list(l) ::= term(t). {
+  l = mndb_ast_new(MNDB_AST_TYPE_INVALID /* change uptree */);
+  l = mndb_ast_add_child(l, t);
+}
+
+
+
+
+list(l) ::= RBRACK LBRACK. {
+  l = mndb_ast_new(MNDB_AST_TYPE_LIST);
+}
+
+list(l) ::= RBRACK term_list(tl) LBRACK. {
+  l = tl;
+  mndb_ast_set_type(l, MNDB_AST_TYPE_LIST);
+}
+
+list(l) ::= RBRACK term_list(tl) BAR(b) VAR(v) LBRACK. {
+  l = tl;
+  mndb_ast_set_type(l, MNDB_AST_TYPE_LIST);
+
+  mndb_ast_t *ba = mndb_ast_new(MNDB_AST_TYPE_TOKEN);
+  mndb_ast_set_token(ba, b);
+
+  mndb_ast_t *va = mndb_ast_new(MNDB_AST_TYPE_TOKEN);
+  mndb_ast_set_token(va, a);
+
+  l = mndb_ast_add_child(l, ba);
+  l = mndb_ast_add_child(l, va);
+}
+
+
+
+
+pair(p) ::= term(k) COLON term(v). {
+  p = mndb_ast_new(MNDB_AST_TYPE_PAIR);
+
+  p = mndb_ast_add_child(p, k);
+  p = mndb_ast_add_child(p, v);
+}
+
+
+
+
+pair_list(lpl) ::= pair_list(rpl) COMMA pair(p). {
+  lpl = mndb_ast_add_child(rpl, p);
+}
+
+pair_list(pl) ::= pair(p). {
+  pl = mndb_ast_new(MNDB_AST_TYPE_INVALID /* change uptree */);
+  pl = mndb_ast_add_child(pl, p);
+}
+
+
+
+
+map(m) ::= RBRACK pair_list(pl) LBRACK. {
+  m = pl;
+  mndb_ast_set_type(l, MNDB_AST_TYPE_MAP);
+}
+
+map(m) ::= RBRACK pair_list(pl) BAR(b) VAR(v) LBRACK. {
+  m = pl;
+  mndb_ast_set_type(m, MNDB_AST_TYPE_MAP);
+
+  mndb_ast_t *ba = mndb_ast_new(MNDB_AST_TYPE_TOKEN);
+  mndb_ast_set_token(ba, b);
+
+  mndb_ast_t *va = mndb_ast_new(MNDB_AST_TYPE_TOKEN);
+  mndb_ast_set_token(va, a);
+
+  m = mndb_ast_add_child(m, ba);
+  m = mndb_ast_add_child(m, va);
+}
+
+term(t) ::= const(c). {
+ t = c;
+}
+
+term(t) ::= VAR(v). {
+  mndb_ast_t *t = mndb_ast_new(MNDB_AST_TYPE_TOKEN);
+  mndb_ast_set_token(t, v);
+}
+
+term(t) ::= list(l). {
+ t = l;
+}
+
+term(t) ::= map(m). {
+ t = m;
+}
+
+is_expr(ie) ::= INT(i). {
+  mndb_ast_t *ie = mndb_ast_new(MNDB_AST_TYPE_TOKEN);
+  mndb_ast_set_token(ie, i);
+}
+
+is_expr(ie) ::= FLOAT(f). {
+  mndb_ast_t *ie = mndb_ast_new(MNDB_AST_TYPE_TOKEN);
+  mndb_ast_set_token(ie, f);
+}
+
+is_expr(ie) ::= is_expr(lo) PLUS(o) is_expr(ro). {
+  mndb_ast_t *ie = mndb_ast_new(MNDB_AST_TYPE_BIN_OP);
+  mndb_ast_set_token(ie, o);
+
+  ie = mndb_ast_add_child(ie, lo);
+  ie = mndb_ast_add_child(ie, ro);
+}
+
+is_expr(ie) ::= is_expr(lo) MINUS(o) is_expr(ro).{
+  mndb_ast_t *ie = mndb_ast_new(MNDB_AST_TYPE_BIN_OP);
+  mndb_ast_set_token(ie, o);
+
+  ie = mndb_ast_add_child(ie, lo);
+  ie = mndb_ast_add_child(ie, ro);
+}
+
+is_expr(ie) ::= is_expr(lo) DIV(o) is_expr(ro).{
+  mndb_ast_t *ie = mndb_ast_new(MNDB_AST_TYPE_BIN_OP);
+  mndb_ast_set_token(ie, o);
+
+  ie = mndb_ast_add_child(ie, lo);
+  ie = mndb_ast_add_child(ie, ro);
+}
+
+is_expr(ie) ::= is_expr(lo) MUL(o) is_expr(ro).{
+  mndb_ast_t *ie = mndb_ast_new(MNDB_AST_TYPE_BIN_OP);
+  mndb_ast_set_token(ie, o);
+
+  ie = mndb_ast_add_child(ie, lo);
+  ie = mndb_ast_add_child(ie, ro);
+}
+
+is_expr(ie) ::= is_expr(lo) MOD(o) is_expr(ro).{
+  mndb_ast_t *ie = mndb_ast_new(MNDB_AST_TYPE_BIN_OP);
+  mndb_ast_set_token(ie, o);
+
+  ie = mndb_ast_add_child(ie, lo);
+  ie = mndb_ast_add_child(ie, ro);
+}
+
+is_expr(ie) ::= MINUS(o) is_expr(op).{
+  mndb_ast_t *ie = mndb_ast_new(MNDB_AST_TYPE_UNARY_OP);
+  mndb_ast_set_token(ie, o);
+
+  ie = mndb_ast_add_child(ie, op);
+}
+
+is_expr(ie) ::= is_expr(op) POW(o). {
+  mndb_ast_t *ie = mndb_ast_new(MNDB_AST_TYPE_UNARY_OP);
+  mndb_ast_set_token(ie, o);
+
+  ie = mndb_ast_add_child(ie, op);
+}
+
+is_expr(lie) ::= LPAREN is_expr(rie) RPAREN. {
+  mndb_ast_t *lie = rie;
+}
+
+unif(u) ::= term(lt) UNIFY term(rt). {
+  mndb_ast_t *u = mndb_ast_new(MNDB_AST_TYPE_UNIFY);
+
+  u = mndb_ast_add_child(u, lt);
+  u = mndb_ast_add_child(u, rt);
+}
+
+fact(f) ::= ATOM LPAREN term_list RPAREN. {
+  mndb_ast_t *u = mndb_ast_new(MNDB_AST_TYPE_FACT);
+
+  u = mndb_ast_add_child(u, lt);
+  u = mndb_ast_add_child(u, rt);
+}
+
 fact ::= term IS is_expr.
 fact ::= unif.
 

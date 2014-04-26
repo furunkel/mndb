@@ -4,7 +4,9 @@
 #include "common/mndb-ygen.h"
 #include "common/mndb-ptr-stack.h"
 
-#define MNDB_ENVVAR_DEBUG "MNDB_DEBUG"
+#include "parser/mndb-parser.h"
+
+#define MNDB_ENVVAR_LOG "MNDB_LOG"
 
 bool
 mndb_init(int *argc, const char ***argv);
