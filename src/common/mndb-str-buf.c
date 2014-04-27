@@ -87,8 +87,7 @@ retry:
   }
   else
   {
-    // we don't want the nul byte
-    buf->len += (size_t) n - 1;
+    buf->len += (size_t) n;
   }
 
   va_end(vl);
