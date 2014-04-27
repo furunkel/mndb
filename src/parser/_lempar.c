@@ -4,6 +4,7 @@
 /* First off, code is included that follows the "include" declaration
 ** in the input grammar file. */
 #include <stdio.h>
+#include <stdint.h>
 %%
 /* Next is all token values, in a form suitable for use by makeheaders.
 ** This section will be null unless lemon is run with the -m switch.
@@ -213,13 +214,15 @@ void ParseTrace(FILE *TraceFILE, char *zTracePrompt){
 }
 #endif /* NDEBUG */
 
-#ifndef NDEBUG
-/* For tracing shifts, the names of all terminals and nonterminals
-** are required.  The following table supplies these names */
 static const char *const yyTokenName[] = { 
 %%
 };
-#endif /* NDEBUG */
+
+const char *
+mndb_parser_token_id_to_s(uint32_t id)
+{
+  return yyTokenName[id];
+}
 
 #ifndef NDEBUG
 /* For tracing reduce actions, the names of all rules are required.

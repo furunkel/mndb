@@ -66,6 +66,7 @@ struct mndb_parser_s {
   bool after_comment;
 };
 
+
 #include "parser/mndb-ast.h"
 
 typedef struct  {
@@ -88,5 +89,11 @@ mndb_parser_new(mndb_parser_mode_t mode);
 mndb_ast_t *
 mndb_parser_parse(mndb_parser_t *parser, const char *buf, size_t len);
 
+const char *
+mndb_parser_token_id_to_s(uint32_t id);
+
 void
 mndb_parser_free(mndb_parser_t *parser);
+
+char *
+mndb_parser_token_value_to_s(mndb_parser_token_t *token);

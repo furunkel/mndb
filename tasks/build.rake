@@ -9,7 +9,8 @@ def src_files
 end
 
 def gen_src_files
-  FileList[File.join $build_dir, 'gen', '*.c']
+  FileList[File.join($build_dir, 'gen', 'parser.c'),
+           File.join($build_dir, 'gen', 'lexer.c')]
 end
 
 def obj_file(src_file)
@@ -29,9 +30,14 @@ def gen_obj_files
 end
 
 namespace :build do
-  task :shared_lib => ['parser:gen', obj_files, gen_obj_files].flatten do |t|
+  task :shared_lib => [:gen, :objs] do |t|
     sh "cc -shared -o #{shared_lib_file} #{(obj_files + gen_obj_files).join ' '}"
   end
+
+  task :gen => ['parser:gen', :gen_objs]
+
+  multitask :objs => obj_files
+  multitask :gen_objs => gen_obj_files
 
   src_files.each do |src_file|
     file obj_file(src_file) => src_file do |t|

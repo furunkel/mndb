@@ -7,14 +7,14 @@
 
 static const char const* _mndb_log_tag = "lexer";
 
-void Parse(void *, int, mndb_parser_token_t *, mndb_parser_t *);
+void Parse(void *, int, mndb_parser_token_t *, _mndb_parser_ctx_t *);
 
 void
-yield_scanner_token(mndb_parser_t *ctx, mndb_parser_token_t *token)
+yield_scanner_token(_mndb_parser_ctx_t *ctx, mndb_parser_token_t *token)
 {
-  if(ctx->token_func != NULL)
+  if(ctx->parser->token_func != NULL)
   {
-    (*ctx->token_func)(ctx, token);
+    (*ctx->parser->token_func)(ctx->parser, token);
   }
 }
 
@@ -285,7 +285,9 @@ preparse_number(char *num_str, int *basep, const char *text, size_t len)
 %option noyywrap reentrant fast 8bit
 %option extra-type="_mndb_parser_ctx_t *"
 
-atom [a-z]([0-9A-Za-z_]|\\" ")*("/"[0-9]+)?
+atom_no_arity [a-z]([0-9A-Za-z_])*
+atom {atom_no_arity}("/"[0-9]+)?
+pred {atom_no_arity}"("
 var [A-Z_]([0-9A-Za-z_])*
 bin_digits [0-1]("_"?[0-1])*
 oct_digits [0-8]("_"?[0-8])*
@@ -541,6 +543,12 @@ utf8 ({utf8_1}|{utf8_2}|{utf8_3}|{utf8_4}|{utf8_5})
 
 {atom} {
   mndb_parser_token_t *token = NEW_TOKEN(ATOM, yyleng);
+  mndb_parser_token_set_value(token, MNDB_PARSER_TOKEN_TYPE_STR, yytext);
+  return yield_token(yyextra, token);
+}
+
+{pred} {
+  mndb_parser_token_t *token = NEW_TOKEN(PRED, yyleng - 1);
   mndb_parser_token_set_value(token, MNDB_PARSER_TOKEN_TYPE_STR, yytext);
   return yield_token(yyextra, token);
 }

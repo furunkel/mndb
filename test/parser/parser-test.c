@@ -17,9 +17,14 @@ main(int argc, const char *argv[])
   size_t len = 0;
   ssize_t read;
 
+  mndb_ast_t *ast;
+
   while((read = getline(&line, &len, stdin)) != -1)
   {
-    mndb_parser_parse(parser, line, (size_t)read);
+    ast = mndb_parser_parse(parser, line, (size_t)read);
+    char *ast_sexp = mndb_ast_to_sexp(ast);
+    puts(ast_sexp);
+    free(ast_sexp);
   }
 
   mndb_parser_free(parser);

@@ -113,11 +113,11 @@ mndb_ast_t *
 mndb_parser_parse(mndb_parser_t *parser, const char *buf, size_t len)
 {
   YY_BUFFER_STATE buffer = NULL;
-  buffer = yy_scan_bytes(buf, len, parser->scanner);
 
   _mndb_parser_ctx_t ctx = {.parser = parser, .root = NULL};
+  yyset_extra((void *)&ctx, parser->scanner);
 
-  yylex_init_extra((void *)&ctx, &parser->scanner);
+  buffer = yy_scan_bytes(buf, len, parser->scanner);
 
   while(yylex(parser->scanner) != 0) {}
 
@@ -138,4 +138,51 @@ mndb_parser_free(mndb_parser_t *parser)
   yylex_destroy(parser->scanner);
   ParseFree(parser->parser, free);
   free(parser);
+}
+
+char *
+mndb_parser_token_value_to_s(mndb_parser_token_t *token)
+{
+  const char *s;
+  char *r;
+  size_t s_len;
+
+  const size_t buf_len = 256;
+  char buf[buf_len];
+
+  switch(token->type)
+  {
+    case MNDB_PARSER_TOKEN_TYPE_NO_VALUE:
+      s = "none";
+      s_len = strlen(s);
+      goto copy_string;
+    case MNDB_PARSER_TOKEN_TYPE_STR:
+      s = token->str_val;
+      s_len = token->str_len;
+
+copy_string:
+      r = malloc(sizeof(char) * (s_len + 3));
+      r[0] = '"';
+      memcpy(r + 1, s, s_len);
+      r[s_len + 1] = '"';
+      r[s_len + 2] = '\0';
+      break;
+    case MNDB_PARSER_TOKEN_TYPE_INT:
+    {
+      int n = snprintf(buf, buf_len, "%"PRId64, token->int_val);
+      r = malloc(sizeof(char) * (size_t)(n + 1));
+      strncpy(r, buf, (size_t) n);
+      break;
+    }
+    case MNDB_PARSER_TOKEN_TYPE_FLOAT:
+    {
+      int n = snprintf(buf, buf_len, "%lf", token->float_val);
+      r = malloc(sizeof(char) * (size_t)(n + 1));
+      strncpy(r, buf, (size_t) n);
+      break;
+    }
+    default:
+      r = NULL;
+  }
+  return r;
 }
