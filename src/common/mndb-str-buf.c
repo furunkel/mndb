@@ -111,11 +111,16 @@ mndb_str_buf_data(mndb_str_buf_t *buf)
 }
 
 char *
-mndb_str_buf_str(mndb_str_buf_t *buf)
+mndb_str_buf_str(mndb_str_buf_t *buf, size_t *len)
 {
   char *b = malloc(sizeof(char) * (buf->len + 1));
   memcpy(b, buf->data, buf->len);
   b[buf->len] = '\0';
+
+  if(len != NULL)
+  {
+    *len = buf->len;
+  }
 
   return b;
 }

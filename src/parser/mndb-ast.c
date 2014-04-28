@@ -101,14 +101,14 @@ mndb_ast_to_sexp_(mndb_ast_t *ast, mndb_str_buf_t *buf, bool root)
 }
 
 char *
-mndb_ast_to_sexp(mndb_ast_t *ast)
+mndb_ast_to_sexp(mndb_ast_t *ast, size_t *len)
 {
   mndb_str_buf_t buf;
   mndb_str_buf_init(&buf, 512);
 
   mndb_ast_to_sexp_(ast, &buf, true);
 
-  char *str = mndb_str_buf_str(&buf);
+  char *str = mndb_str_buf_str(&buf, len);
   mndb_str_buf_destroy(&buf);
 
   return str;

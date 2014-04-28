@@ -48,8 +48,6 @@ mndb_ast_set_token(mndb_ast_t *ast, mndb_parser_token_t *token);
 uint32_t
 mndb_ast_token_id(mndb_ast_t *ast);
 
-#ifdef __GLIBC__
 char *
-mndb_ast_to_sexp(mndb_ast_t *ast);
-#endif
+mndb_ast_to_sexp(mndb_ast_t *ast, size_t *len);
 

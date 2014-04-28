@@ -25,5 +25,5 @@ void
 mndb_str_buf_destroy(mndb_str_buf_t *buf);
 
 char *
-mndb_str_buf_str(mndb_str_buf_t *buf);
+mndb_str_buf_str(mndb_str_buf_t *buf, size_t *len);
 
