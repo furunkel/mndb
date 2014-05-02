@@ -18,4 +18,5 @@
 -Wcast-align
 -fstrict-aliasing
 -Wstrict-aliasing=3
+-Wno-error=conversion
 -I./include
